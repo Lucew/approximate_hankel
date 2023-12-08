@@ -83,7 +83,7 @@ def etl_eigenvalues(result_path: str = "result") -> list[str]:
     for window_length in window_sizes:
 
         # create the name and check whether it is already saved
-        name = os.path.join(result_path, f"eigenvalues_window_{window_length}")
+        name = os.path.join(result_path, f"SVD_eigenvalues_window_{window_length}")
         names.append(name)
         if os.path.isfile(name):
             print(f"Result dataframe for window length {window_length} already exists in current directory.")
