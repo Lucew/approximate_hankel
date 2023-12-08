@@ -12,7 +12,7 @@ def find_files(result_path: str, window_size: int) -> list[str]:
     # find the correct folder
     target_folder = ""
     for folder in glob(os.path.join(result_path, "*/")):
-        if folder.endswith(f'{window_size}{os.path.sep}'):
+        if folder.endswith(f'_{window_size}{os.path.sep}'):
             target_folder = folder
 
     # check whether we found the corresponding folder
@@ -39,6 +39,7 @@ def extract_data(file_path: str) -> (list[str], list[np.ndarray]):
         # normalize the eigenvectors
         eigenvalue_array = eigenvalue_array / np.sum(eigenvalue_array)
         eigenvalues.append(eigenvalue_array)
+    assert len(indices) == int(os.path.splitext(file_path)[0].split("__")[-1]), f"Something is wrong @{file_path}."
     return indices, eigenvalues
 
 
