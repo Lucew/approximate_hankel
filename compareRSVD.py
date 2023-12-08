@@ -31,7 +31,7 @@ def process_signal(svd_result_file: str, hdf_path: str, random_ranks: list[int],
                    additional_ranks: list[int]) -> None:
     # extract all the information we need from the result file we are working with
     only_file = os.path.splitext(os.path.split(svd_result_file)[-1])[0]
-    signal_key, dimensions, chunk_number = only_file.split("__")
+    signal_key, dimensions, chunk_number, _ = only_file.split("__")
     chunk_number = int(chunk_number)
     dimensions = [int(ele) for ele in dimensions.split("x")]
     assert len(dimensions) == 2, f'We expected dimensions to have for INTxINT but got {dimensions}.'
@@ -148,7 +148,7 @@ def main(file_path: str, result_path: str, random_rank: list[int], subspace_repe
     for window_folder in window_folders:
 
         # find all the files within the corresponding folder
-        file_list = [ele for ele in glob(os.path.join(window_folder, "*.npz")) if "rsvd" not in ele]
+        file_list = glob(os.path.join(window_folder, "*__svd.npz"))
 
         # make multiprocessing to make use of multicore cpus
         with mp.Pool(mp.cpu_count()) as pp:

@@ -19,7 +19,7 @@ def find_files(result_path: str, window_size: int) -> list[str]:
     assert target_folder, f'We could not find the correct folder for window size {window_size} in {result_path}.'
 
     # get the path to all the files
-    return glob(os.path.join(target_folder, '*svd.npz'))
+    return glob(os.path.join(target_folder, '*__svd.npz'))
 
 
 def extract_data(file_path: str) -> (list[str], list[np.ndarray]):
