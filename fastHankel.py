@@ -507,11 +507,11 @@ def main():
 
 if __name__ == "__main__":
     # main()
-    run_measurements(thread_counts=[1, 6, 12],
+    run_measurements(thread_counts=[1, 2, 4, 6, 8, 10, 12],
                      window_lengths=list(np.geomspace(10, 20_000, num=100, dtype=int)),
                      window_numbers=list(np.geomspace(10, 20_000, num=100, dtype=int)),
-                     signal_scaling=[1, 10],
-                     other_matrix_dimensions=[5, 10, 20, 30, 40, 50],
-                     other_matrix_scaling=[1, 10],
-                     lags=[1, 7],
-                     runs=100)
+                     signal_scaling=[1],
+                     other_matrix_dimensions=[5, 10, 20, 40, 50],
+                     other_matrix_scaling=[1],
+                     lags=[1],
+                     runs=50)
