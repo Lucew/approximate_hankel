@@ -118,7 +118,7 @@ def process_signal(svd_result_file: str, hdf_path: str, random_ranks: list[int],
             vector_collector[f"{tmpn}__left_vectors_difference"] = np.sum(np.square(left_vectors
                                                                                     - svd_left_vectors[:, :rd_rank]),
                                                                           axis=1)
-            vector_collector[f"{tmpn}__eigenvalues_difference"] = np.square(eigenvalues-svd_eigenvalues[:rd_rank])
+            vector_collector[f"{tmpn}__eigenvalues"] = eigenvalues
 
     # save the result in the corresponding files
     name = f"{signal_key}__{dimensions[0]}x{dimensions[1]}__{chunk_number}__rsvd_difference.npz"
