@@ -94,7 +94,7 @@ def process_signal(signal_key: str, window_size: int, n_windows: int, random_ran
         vector_collector[f"{name}__eigenvalues"] = eigenvalues
 
     # save the result in the corresponding files
-    name = f"{signal_key}__{window_size}x{n_windows}__{chunk_number}.npz"
+    name = f"{signal_key}__{window_size}x{n_windows}__{chunk_number}__svd.npz"
     name = os.path.join(signal_dir, name)
     np.savez_compressed(name, **vector_collector)
 

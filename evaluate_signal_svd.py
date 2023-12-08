@@ -19,7 +19,7 @@ def find_files(result_path: str, window_size: int) -> list[str]:
     assert target_folder, f'We could not find the correct folder for window size {window_size} in {result_path}.'
 
     # get the path to all the files
-    return glob(os.path.join(target_folder, '*npz'))
+    return glob(os.path.join(target_folder, '*svd.npz'))
 
 
 def extract_data(file_path: str) -> (list[str], list[np.ndarray]):
@@ -39,7 +39,7 @@ def extract_data(file_path: str) -> (list[str], list[np.ndarray]):
         # normalize the eigenvectors
         eigenvalue_array = eigenvalue_array / np.sum(eigenvalue_array)
         eigenvalues.append(eigenvalue_array)
-    assert len(indices) == int(os.path.splitext(file_path)[0].split("__")[-1]), f"Something is wrong @{file_path}."
+    assert len(indices) == int(os.path.splitext(file_path)[0].split("__")[-2]), f"Something is wrong @{file_path}."
     return indices, eigenvalues
 
 
