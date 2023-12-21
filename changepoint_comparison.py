@@ -606,7 +606,6 @@ def run_comparison():
 
     # create different window sizes and specify the amount of windows
     window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 2000, num=100))[::-1]]
-    window_sizes = [1200, 600, 1000, 500]
 
     # get the signal keys from the hdf5 file
     hdf_path = "UCRArchive_2018.hdf5"
