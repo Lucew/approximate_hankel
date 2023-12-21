@@ -1,5 +1,7 @@
 import collections
 import numpy as np
+import scipy.linalg
+
 from fastHankel import (fast_hankel_matmul, fast_hankel_left_matmul, get_fast_hankel_representation,
                         hankel_fft_from_matrix)
 import scipy as sp
@@ -29,7 +31,7 @@ SIAM Review, Volume 53, Number 2, pP 217-288, 2011.
 ########################################################################################################################
 # ------------------------------------ POWER ITERATIONS ---------------------------------------------------------------#
 ########################################################################################################################
-def power_method_naive(a_matrix: np.ndarray, x_vector: np.ndarray, n_iterations: int) -> (float, np.ndarray):
+def power_method(a_matrix: np.ndarray, x_vector: np.ndarray, n_iterations: int) -> (float, np.ndarray):
     """
     This function searches the largest (dominant) eigenvalue and corresponding eigenvector by repeated multiplication
     of the matrix A with an initial vector. It assumes a dominant eigenvalue bigger than the second one, otherwise
@@ -41,11 +43,12 @@ def power_method_naive(a_matrix: np.ndarray, x_vector: np.ndarray, n_iterations:
 
     # go through the iterations and continue to scale the returned vector, so we do not reach extreme values
     # during the iteration we scale the vector by its maximum as we can than easily extract the eigenvalue
+    c_matrix = a_matrix.T @ a_matrix
     for _ in range(n_iterations):
 
         # multiplication with a_matrix.T @ a_matrix as can be seen in explanation of
         # https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html
-        x_vector = a_matrix @ x_vector
+        x_vector = c_matrix @ x_vector
 
         # scale the vector so we keep the values in bound
         x_vector = x_vector / np.max(x_vector)
@@ -57,37 +60,6 @@ def power_method_naive(a_matrix: np.ndarray, x_vector: np.ndarray, n_iterations:
     mat_vec = a_matrix @ x_vector
     eigenvalue = np.linalg.norm(mat_vec)
     return eigenvalue, mat_vec/eigenvalue
-
-
-def power_method_fft(fft_matrix: np.ndarray, length_windows: int, fft_length: int, x_vector: np.ndarray,
-                     n_iterations: int) -> (float, np.ndarray):
-    """
-    This function searches the largest (dominant) eigenvalue and corresponding eigenvector by repeated multiplication
-    of the matrix A with an initial vector. It assumes a dominant eigenvalue bigger than the second one, otherwise
-    it won't converge
-
-    For proof and explanation look at:
-    https://pythonnumericalmethods.berkeley.edu/notebooks/chapter15.02-The-Power-Method.html
-    """
-
-    # go through the iterations and continue to scale the returned vector, so we do not reach extreme values
-    # during the iteration we scale the vector by its maximum as we can than easily extract the eigenvalue
-    for _ in range(n_iterations):
-        # multiplication with a_matrix.T @ a_matrix as can be seen in explanation of
-        # https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html
-        # x_vector = a_square @ x_vector
-        x_vector = fast_hankel_matmul(fft_matrix, length_windows, fft_length, x_vector, lag=1)
-
-        # scale the vector so we keep the values in bound
-        x_vector = x_vector / np.max(x_vector)
-
-    # get the normed eigenvector
-    x_vector = x_vector / np.linalg.norm(x_vector)
-
-    # get the corresponding eigenvalue
-    mat_vec = fast_hankel_matmul(fft_matrix, length_windows, fft_length, x_vector, lag=1)
-    eigenvalue = np.linalg.norm(mat_vec)
-    return eigenvalue, mat_vec / eigenvalue
 
 
 ########################################################################################################################
@@ -430,7 +402,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
     assert len(time_series) >= end_idx, f"Time series is too short ({time_series.shape}) for start: {end_idx}."
 
     # create random vector for power iterations with the future hankel matrix as described in [1]
-    x0 = random_state.rand(window_number, 1)
+    x0 = random_state.rand(window_number)
     x0 /= np.linalg.norm(x0)
 
     # add small noise to the data so the ika sst does not break
@@ -441,8 +413,10 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         # compile the future hankel matrix (H2)
         hankel_future, fft_length, _ = compile_hankel_fft(time_series, end_idx, window_length, window_number)
 
-        # make the power iterations
-        _, x0 = power_method_fft(hankel_future, window_length, fft_length, x0, power_iterations)
+        # get the first singular matrix vector of future hankel matrix
+        x0, _, _ = randomized_hankel_svd_fft(hankel_future, fft_length, k=1, subspace_iteration_q=2,
+                                             oversampling_p=2, length_windows=window_length,
+                                             number_windows=window_number, random_state=random_state)
 
         # compile the past hankel matrix (H1)
         hankel_past, fft_length, _ = compile_hankel_fft(time_series, end_idx - lag, window_length, window_number)
@@ -456,8 +430,10 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         # compile the future hankel matrix (H2)
         hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
 
-        # make the power iterations
-        _, x0 = power_method_naive(hankel_future, x0, power_iterations)
+        # get the first singular vector of the future hankel matrix
+        x0, _, _ = randomized_hankel_svd_naive(hankel_future, k=1, subspace_iteration_q=2, oversampling_p=2,
+                                               length_windows=window_length, number_windows=window_number,
+                                               random_state=random_state)
 
         # compile the past hankel matrix (H1)
         hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
@@ -469,11 +445,10 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
     elif key == "fft ika":
 
         # compile the future hankel matrix (H2)
-        hankel_future, fft_length, _ = compile_hankel_fft(time_series, end_idx, window_length, window_number)
+        hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
 
         # make the power iterations
-        _, x0 = power_method_fft(hankel_future, window_length, fft_length, x0, power_iterations)
-        x0 = x0[:, 0]
+        _, x0 = power_method(hankel_future, x0, power_iterations)
 
         # compile the past hankel matrix (H1) and compute outer product C as in the paper
         hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
@@ -488,8 +463,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
 
         # make the power iterations
-        _, x0 = power_method_naive(hankel_future, x0, power_iterations)
-        x0 = x0[:, 0]
+        _, x0 = power_method(hankel_future, x0, power_iterations)
 
         # compile the past hankel matrix (H1) and compute outer product C as in the paper
         hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
@@ -497,26 +471,14 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
 
         # compute the scoring using the ika naive implementation
         score = implicit_krylov_approximation_naive(hankel_past, x0, 5, 9)
-    elif key == "fft svd":
-
-        # compile the future hankel matrix (H2)
-        hankel_future, fft_length, _ = compile_hankel_fft(time_series, end_idx, window_length, window_number)
-
-        # make the power iterations
-        _, x0 = power_method_fft(hankel_future, window_length, fft_length, x0, power_iterations)
-
-        # compile the past hankel matrix (H1)
-        hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
-
-        # compute the scoring using the ika naive implementation
-        score = exact_svd(hankel_past, x0, 5)
     elif key == "naive svd":
 
         # compile the future hankel matrix (H2)
         hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
 
-        # make the power iterations
-        _, x0 = power_method_naive(hankel_future, x0, power_iterations)
+        # get the largest eigenvalue from decomposition
+        x0, _, _ = np.linalg.svd(hankel_future, full_matrices=False)
+        x0 = x0[:, 0]
 
         # compile the past hankel matrix (H1)
         hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
@@ -544,7 +506,7 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
         signal = filet[signal_key][:]
 
     # specify the keys of the functions we plan to use (and make sure they are unique)
-    function_keys = ["naive svd", "fft svd", "naive rsvd", "fft rsvd", "naive ika", "fft ika"]
+    function_keys = ["naive svd", "naive rsvd", "fft rsvd", "naive ika", "fft ika"]
     assert len(set(function_keys)) == len(function_keys), f"Function keys must not contain duplicates."
     assert reference == function_keys[0], f"{reference} has to be the first function key. Specified: {function_keys}."
 
