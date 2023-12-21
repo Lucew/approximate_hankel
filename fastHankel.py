@@ -4,8 +4,10 @@ import timeit
 import numpy as np
 import pandas as pd
 import scipy as sp
+import numba as nb
 import torch
 from threadpoolctl import threadpool_limits
+import os
 
 
 def compile_hankel(time_series: np.ndarray, end_index: int, window_size: int, rank: int, lag: int = 1) -> np.ndarray:
@@ -34,7 +36,21 @@ def compile_hankel(time_series: np.ndarray, end_index: int, window_size: int, ra
     return hankel
 
 
-def get_fast_hankel_representation(time_series, end_index, length_windows, number_windows, lag=1):
+def hankel_fft_from_matrix(hankel_matrix: np.ndarray):
+
+    # reconstruct the signal from the first row and the last column
+    signal = np.concatenate((hankel_matrix[0, :-1], hankel_matrix[:, -1]))
+
+    # get the optimal fft length using scipy as explained in get_fast_hankel
+    fft_len = sp.fft.next_fast_len(signal.shape[0] + hankel_matrix.shape[1], True)
+
+    # Workers are not necessary as we expect a 1D time series
+    hankel_rfft = sp.fft.rfft(signal, n=fft_len, axis=0).reshape(-1, 1)
+    return hankel_rfft, fft_len, signal
+
+
+def get_fast_hankel_representation(time_series, end_index, length_windows, number_windows,
+                                   lag=1) -> (np.ndarray, int, np.ndarray):
 
     # get the last column of the hankel matrix. The reason for that is that we will use an algorithm for Toeplitz
     # matrices to speed up the multiplication and Hankel[:, ::-1] == Toeplitz.
@@ -68,7 +84,7 @@ def get_fast_hankel_representation(time_series, end_index, length_windows, numbe
     # of two!
     # fft_len = 1 << int(np.ceil(np.log2(combined_length)))
     # fft_len = sp.fft.next_fast_len(combined_length, True)
-    fft_len = sp.fft.next_fast_len(signal.shape[0], True)
+    fft_len = sp.fft.next_fast_len(signal.shape[0]+number_windows, True)
 
     # compute the fft over the padded hankel matrix
     # if we would pad in the middle like this: we would introduce no linear phase to the fft
@@ -82,6 +98,8 @@ def get_fast_hankel_representation(time_series, end_index, length_windows, numbe
     # More details see:
     # https://dsp.stackexchange.com/questions/82273/why-to-pad-zeros-at-the-middle-of-sequence-instead-at-the-end-of-the-sequence
     # https://dsp.stackexchange.com/questions/83461/phase-of-an-fft-after-zeropadding
+    #
+    # Workers are not necessary as we expect a 1D time series
     hankel_rfft = sp.fft.rfft(signal, n=fft_len, axis=0).reshape(-1, 1)
     return hankel_rfft, fft_len, signal
 
@@ -96,8 +114,8 @@ def fast_hankel_matmul(hankel_fft: np.ndarray, l_windows, fft_shape: int, other_
     # Fastmat: https://fastmat.readthedocs.io/en/latest/classes/Toeplitz.html#fastmat.Toeplitz
 
     # check the workers
-    if not workers:
-        workers = 1
+    if workers is None:
+        workers = os.cpu_count()//2
 
     # save the shape of the matrix
     m, n = other_matrix.shape
@@ -130,8 +148,8 @@ def fast_hankel_left_matmul(hankel_fft: np.ndarray, n_windows, fft_shape: int, o
     # Fastmat: https://fastmat.readthedocs.io/en/latest/classes/Toeplitz.html#fastmat.Toeplitz
 
     # check the workers
-    if not workers:
-        workers = 1
+    if workers is None:
+        workers = os.cpu_count()//2
 
     # transpose the other matrix
     other_matrix = other_matrix.T
@@ -160,7 +178,7 @@ def fast_fftconv_hankel_matmul(hankel_signal: np.ndarray, other_matrix: np.ndarr
 
     # check the workers
     if not workers:
-        workers = 1
+        workers = os.cpu_count()//2
 
     if lag > 1:
         m, n = other_matrix.shape
@@ -207,6 +225,18 @@ def fast_torch_hankel_matmul(hankel_repr: torch.Tensor, other_matrix: torch.Tens
         result = torch.nn.functional.conv1d(hankel_repr, other_matrix)
         result = result[0, :, :].transpose(0, 1)
         return result.detach().cpu().numpy()
+
+
+@nb.njit()
+def fast_hankel_inner(hankel_repr: np.ndarray, window_length, window_number, lag):
+
+    # create a matrix that contains the hankel matrix
+    inner_prod = np.zeros((window_number, window_number))
+    for cx in range(window_number):
+        tmp = np.convolve(hankel_repr[cx*lag:], hankel_repr[cx*lag:cx*lag+window_length][::-1], "valid")[::lag]
+        inner_prod[cx, cx:] = tmp
+        inner_prod[cx:, cx] = tmp
+    return inner_prod
 
 
 def normal_hankel_matmul(hankel, other):
@@ -265,6 +295,23 @@ def print_table(my_tuples: list[dict]):
         print(text)
 
 
+def probe_hankel_fft_from_matrix(time_series, window_length: int, window_number: int, comment: str):
+
+    # get the final index of the time series
+    end_idx = window_length + window_number - 1
+
+    # get the hankel matrix
+    hankel_matrix = compile_hankel(time_series, end_idx, window_length, window_number, lag=1)
+
+    # get the fft representation from the matrix
+    hankel_fft1, fft_len1, _ = hankel_fft_from_matrix(hankel_matrix)
+
+    # get the fft representation directly from the signal
+    hankel_fft2, fft_len2, _ = get_fast_hankel_representation(time_series, end_idx, window_length, window_number, lag=1)
+    assert fft_len1 == fft_len2, "FFT length are different...."
+    return evaluate_closeness(hankel_fft1, hankel_fft2, comment)
+
+
 def probe_fast_hankel_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag, comment: str):
     way_one = fast_hankel_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag)
     way_two = normal_hankel_matmul(hankel_matrix, other_matrix)
@@ -301,8 +348,8 @@ def probe_fast_torch_hankel_matmul(hankel_fft, hankel_matrix, other_matrix, othe
     return evaluate_closeness(way_one, way_two, comment)
 
 
-def probe_fast_hankel_inner_product(hankel_fft, n_windows, fft_len, hankel_matrix, lag, comment: str):
-    way_one = fast_hankel_left_matmul(hankel_fft, n_windows, fft_len, hankel_matrix.T, lag)
+def probe_fast_hankel_inner_product(hankel_repr, hankel_matrix, l_windows, n_windows, lag, comment: str):
+    way_one = fast_hankel_inner(hankel_repr, l_windows, n_windows, lag)
     way_two = normal_hankel_inner(hankel_matrix)
     return evaluate_closeness(way_one, way_two, comment)
 
@@ -436,15 +483,15 @@ def run_measurements(thread_counts: list[int],
 def main():
     # define some window length
     limit_threads = 12
-    l_windows = 1200
-    n_windows = 1200
+    l_windows = 1000
+    n_windows = 1000
     lag = 1
     run_num = 1000
 
     # create a time series of a certain length
     n = 30000
-    ts = np.random.uniform(size=(n,))*1000
-    # ts = np.linspace(0, n, n+1)
+    # ts = np.random.uniform(size=(n,))*1000
+    ts = np.linspace(0, n, n+1)
 
     # create a matrix to multiply by
     multi = np.random.uniform(size=(n_windows, 10))
@@ -472,7 +519,8 @@ def main():
     results.append(probe_fast_convolve_hankel_matmul(signal, hankel, multi, lag, 'Matmul convolve working?'))
     results.append(probe_fast_fftconvolve_hankel_matmul(signal, hankel, multi, lag, 'Matmul fftconvolve working?'))
     results.append(probe_fast_fftconvolve_hankel_left_matmul(signal, hankel, multi2, lag, 'Left Matmul fftconvolve working?'))
-    # results.append(probe_fast_hankel_inner_product(hankel_rfft, n_windows, fft_len, hankel, lag, 'Inner product working?'))
+    results.append(probe_hankel_fft_from_matrix(signal, l_windows, n_windows, "FFT representation from Hankel matrix?"))
+    # results.append(probe_fast_hankel_inner_product(signal, hankel, l_windows, n_windows, lag, 'Inner product working?'))
     print_table(results)
 
     # check for execution time of both approaches
@@ -502,11 +550,13 @@ def main():
 
         print("Times for Naive inner Product:")
         # print(timeit.timeit(lambda: normal_hankel_inner(hankel), number=run_num) / run_num * 1000)
-        # print(timeit.timeit(lambda: fast_hankel_left_matmul(hankel_rfft, n_windows, fft_len, hankel.T, lag), number=run_num) / run_num * 1000)
+        # print(timeit.timeit(lambda: fast_hankel_inner(signal, l_windows, n_windows, lag), number=run_num) / run_num * 1000)
 
 
 if __name__ == "__main__":
-    # main()
+    main()
+
+    """
     run_measurements(thread_counts=[1, 3, 6, 9, 12],
                      window_lengths=list(np.geomspace(10, 20_000, num=30, dtype=int)),
                      window_numbers=list(np.geomspace(10, 20_000, num=30, dtype=int)),
@@ -515,3 +565,4 @@ if __name__ == "__main__":
                      other_matrix_scaling=[1],
                      lags=[1],
                      runs=50)
+    """

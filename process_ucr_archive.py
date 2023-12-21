@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 import os
 import h5py
@@ -79,6 +81,7 @@ def create_hdf_file(path: str) -> None:
             dataset_name = os.path.splitext(os.path.split(file)[-1])[0]
             dataset_name, specifier = dataset_name.split("_")
             contents = read_csv(file, info_csv[specifier.capitalize()].loc[dataset_name])
+            # contents = random.sample(contents, 3)
 
             # save into the hdf5 file
             for sx, signal in contents:
