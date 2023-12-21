@@ -7,7 +7,7 @@ import numba as nb
 import h5py
 import time
 import pandas as pd
-import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 
 """
@@ -433,6 +433,9 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
     x0 = random_state.rand(window_number, 1)
     x0 /= np.linalg.norm(x0)
 
+    # add small noise to the data so the ika sst does not break
+    time_series += random_state.normal(scale=1e-4)
+
     if key == "fft rsvd":
 
         # compile the future hankel matrix (H2)
@@ -602,7 +605,7 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
 def run_comparison():
 
     # create different window sizes and specify the amount of windows
-    window_sizes = [int(ele) for ele in np.ceil(np.geomspace(500, 1200, num=10))[::-1]]
+    window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 2000, num=100))[::-1]]
     window_sizes = [1200, 600, 1000, 500]
 
     # get the signal keys from the hdf5 file
@@ -622,10 +625,14 @@ def run_comparison():
 
     # go through the signals and window sizes and compute the values
     for window_size in window_sizes:
-        for signal_key in signal_keys:
+        for signal_key in tqdm(signal_keys, desc=f"Computing for window size {window_size}"):
             tmp_results = process_signal(signal_key, window_size, hdf_path, list(results.keys()))
             for key in results:
                 results[key].extend(tmp_results[key])
+
+        # check whether results are empty
+        if not results[list(results.keys())[0]]:
+            continue
 
         # put into dataframe
         df = pd.DataFrame(results)
