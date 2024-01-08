@@ -567,6 +567,7 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
                 results["cmp val"].append(cmp_val)
                 results["random seed"].append(seed)
                 results["window lengths"].append(window_length)
+                results["max. threads"].append(thread_limit)
 
                 # assert that every list in results has equal lengths
                 assert len(set(len(values) for values in results.values())) == 1, "Something went wrong with the results."
@@ -591,7 +592,8 @@ def run_comparison():
                "time": [],
                "cmp val": [],
                "random seed": [],
-               "window lengths": []}
+               "window lengths": [],
+               "max. threads": []}
 
     # go through the signals and window sizes and compute the values
     for window_size in window_sizes:
