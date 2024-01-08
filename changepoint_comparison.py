@@ -10,6 +10,7 @@ import h5py
 import time
 import pandas as pd
 from tqdm import tqdm
+from threadpoolctl import threadpool_limits
 
 
 """
@@ -499,7 +500,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
 
 
 def process_signal(signal_key: str, window_length: int, hdf_path: str, result_keys: list[str],
-                   reference: str = "naive svd") -> dict[str:(float, float, int)]:
+                   reference: str = "naive svd", thread_limit: int = 4) -> dict[str:(float, float, int)]:
 
     # get the signal into the RAM
     with h5py.File(hdf_path, 'r') as filet:
@@ -525,47 +526,50 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
     if not chunk_number:
         return results
 
-    # go over the chunks and compute the svd and save the result of the svd
-    for chx in range(chunk_number):
+    # limit the threads for the BLAS and numpy multiplications
+    with threadpool_limits(limits=thread_limit):
 
-        # create a random state so every function uses the same random state reliably
-        # mainly to take care of the future vector generation
-        seed = np.random.randint(1, 10_000_000)
-        rnd_state = np.random.RandomState(seed)
+        # go over the chunks and compute the svd and save the result of the svd
+        for chx in range(chunk_number):
 
-        # make a comparison value
-        cmp_val = -1
+            # create a random state so every function uses the same random state reliably
+            # mainly to take care of the future vector generation
+            seed = np.random.randint(1, 10_000_000)
+            rnd_state = np.random.RandomState(seed)
 
-        # go over all the functions
-        for key in function_keys:
+            # make a comparison value
+            cmp_val = -1
 
-            # compute the end index
-            end_idx = (chx+1)*chunk_length
+            # go over all the functions
+            for key in function_keys:
 
-            # compute the result
-            start = time.perf_counter_ns()
-            score = transform(signal, window_length, window_length, lag, end_idx, key, rnd_state)
-            elapsed = time.perf_counter_ns() - start
+                # compute the end index
+                end_idx = (chx+1)*chunk_length
 
-            # check whether we have computed the reference value
-            if key == reference:
-                cmp_val = score
-            else:
-                assert cmp_val >= 0, "We do not have a valid compare value, something is fishy."
+                # compute the result
+                start = time.perf_counter_ns()
+                score = transform(signal, window_length, window_length, lag, end_idx, key, rnd_state)
+                elapsed = time.perf_counter_ns() - start
 
-            # keep (value, error, time)
-            name = f"{signal_key}__{chx*chunk_length}_to_{(chx+1)*chunk_length}"
-            results["identifier"].append(name)
-            results["method"].append(key)
-            results["score"].append(score)
-            results["true-score"].append(cmp_val-score)
-            results["time"].append(elapsed)
-            results["cmp val"].append(cmp_val)
-            results["random seed"].append(seed)
-            results["window lengths"].append(window_length)
+                # check whether we have computed the reference value
+                if key == reference:
+                    cmp_val = score
+                else:
+                    assert cmp_val >= 0, "We do not have a valid compare value, something is fishy."
 
-            # assert that every list in results has equal lengths
-            assert len(set(len(values) for values in results.values())) == 1, "Something went wrong with the results."
+                # keep (value, error, time)
+                name = f"{signal_key}__{chx*chunk_length}_to_{(chx+1)*chunk_length}"
+                results["identifier"].append(name)
+                results["method"].append(key)
+                results["score"].append(score)
+                results["true-score"].append(cmp_val-score)
+                results["time"].append(elapsed)
+                results["cmp val"].append(cmp_val)
+                results["random seed"].append(seed)
+                results["window lengths"].append(window_length)
+
+                # assert that every list in results has equal lengths
+                assert len(set(len(values) for values in results.values())) == 1, "Something went wrong with the results."
     return results
 
 
