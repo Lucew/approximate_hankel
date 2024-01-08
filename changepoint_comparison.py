@@ -415,7 +415,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
 
         # get the first singular matrix vector of future hankel matrix
         x0, _, _ = randomized_hankel_svd_fft(hankel_future, fft_length, k=1, subspace_iteration_q=2,
-                                             oversampling_p=2, length_windows=window_length,
+                                             oversampling_p=6, length_windows=window_length,
                                              number_windows=window_number, random_state=random_state)
 
         # compile the past hankel matrix (H1)
@@ -431,7 +431,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
 
         # get the first singular vector of the future hankel matrix
-        x0, _, _ = randomized_hankel_svd_naive(hankel_future, k=1, subspace_iteration_q=2, oversampling_p=2,
+        x0, _, _ = randomized_hankel_svd_naive(hankel_future, k=1, subspace_iteration_q=2, oversampling_p=6,
                                                length_windows=window_length, number_windows=window_number,
                                                random_state=random_state)
 
@@ -501,7 +501,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
 def process_signal(signal_key: str, window_length: int, hdf_path: str, result_keys: list[str],
                    reference: str = "naive svd") -> dict[str:(float, float, int)]:
 
-    # get the signal into RAM
+    # get the signal into the RAM
     with h5py.File(hdf_path, 'r') as filet:
         signal = filet[signal_key][:]
 
@@ -513,14 +513,19 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
     # create the results dict
     results = {col: [] for col in result_keys}
 
-    # compute the amount of chunks we need to make and check whether we have at least one
+    # check whether the signal has nones or inf
+    if np.any(np.logical_or(np.isnan(signal), np.isinf(signal))):
+        print(f"Skipped Signal: {signal_key} as it contains NaN or Inf.")
+        return results
+
+    # compute the number of chunks we need to make and check whether we have at least one
     lag = window_length//3
     chunk_length = 2*window_length - 1 + lag
     chunk_number = signal.shape[0]//chunk_length
     if not chunk_number:
         return results
 
-    # go over the chunks and compute the svd and save the result of the svd within the
+    # go over the chunks and compute the svd and save the result of the svd
     for chx in range(chunk_number):
 
         # create a random state so every function uses the same random state reliably
@@ -566,7 +571,7 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
 
 def run_comparison():
 
-    # create different window sizes and specify the amount of windows
+    # create different window sizes and specify the number of windows
     window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 2000, num=100))[::-1]]
 
     # get the signal keys from the hdf5 file
