@@ -538,7 +538,7 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
             rnd_state = np.random.RandomState(seed)
 
             # make a comparison value
-            cmp_val = -1
+            cmp_val = np.NAN
 
             # go over all the functions
             for key in function_keys:
@@ -554,8 +554,12 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
                 # check whether we have computed the reference value
                 if key == reference:
                     cmp_val = score
+
+                    # check whether the comparison value is negative (too much)
+                    if cmp_val < -10*np.finfo(float).eps:
+                        assert cmp_val != np.NAN, f"Compare value is way lower than zero: {cmp_val}."
                 else:
-                    assert cmp_val >= 0, "We do not have a valid compare value, something is fishy."
+                    assert cmp_val != np.NAN, "We do not have a valid compare value, something is fishy."
 
                 # keep (value, error, time)
                 name = f"{signal_key}__{chx*chunk_length}_to_{(chx+1)*chunk_length}"
