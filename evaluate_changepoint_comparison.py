@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-def load_files(path="results_changepoint", combined_name="Changepoint_WindowSizes.parquet"):
+def load_files(path="results_changepoint_nothreadlim", combined_name="Changepoint_WindowSizes.parquet"):
 
     # check whether the file exists
     if os.path.isfile(combined_name):
@@ -44,6 +44,8 @@ def main():
     # go over the methods and window sizes and compute the average computation time
     computation_times = {"method": [], "window size": [], "computation time [ms]": []}
     for method in methods:
+        if method.endswith(" svd"):
+            continue
         for wl in window_sizes:
             computation_times["method"].append(method)
             computation_times["window size"].append(wl)
@@ -52,7 +54,7 @@ def main():
     # make into a dataframe and plot
     computation_times = pd.DataFrame(computation_times)
     plot = sns.lineplot(data=computation_times, x="window size", y="computation time [ms]", hue="method")
-    plot.set(yscale="log")
+    # plot.set(yscale="log")
     plt.show()
 
 
