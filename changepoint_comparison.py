@@ -738,7 +738,7 @@ def run_simulated_comparison():
             print(f"Method {method:<15} error: {mape:0.10f} time: {elapsed/1_000_000:0.5f}.")
 
         # save it under the window size and clear the results
-        df.to_csv(f"Results_WindowSize_{window_size}.csv")
+        df.to_csv(f"Results_simulated_WindowSize_{window_size}.csv")
 
         # clear the lists
         for value in results.values():
