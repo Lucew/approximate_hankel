@@ -4,6 +4,7 @@ import scipy.linalg
 
 from fastHankel import (fast_hankel_matmul, fast_hankel_left_matmul, get_fast_hankel_representation,
                         hankel_fft_from_matrix)
+import changepoint_simulator as cps
 import scipy as sp
 import numba as nb
 import h5py
@@ -11,6 +12,7 @@ import time
 import pandas as pd
 from tqdm import tqdm
 from threadpoolctl import threadpool_limits
+import argparse
 
 
 """
@@ -415,15 +417,15 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         hankel_future, fft_length, _ = compile_hankel_fft(time_series, end_idx, window_length, window_number)
 
         # get the first singular matrix vector of future hankel matrix
-        x0, _, _ = randomized_hankel_svd_fft(hankel_future, fft_length, k=1, subspace_iteration_q=2,
-                                             oversampling_p=6, length_windows=window_length,
+        x0, _, _ = randomized_hankel_svd_fft(hankel_future, fft_length, k=1, subspace_iteration_q=3,
+                                             oversampling_p=9, length_windows=window_length,
                                              number_windows=window_number, random_state=random_state)
 
         # compile the past hankel matrix (H1)
         hankel_past, fft_length, _ = compile_hankel_fft(time_series, end_idx - lag, window_length, window_number)
 
         # compute the scoring using the ika naive implementation
-        score = rsvd_score_fft(hankel_past, x0, fft_length, k=5, subspace_iteration_q=2, oversampling_p=2,
+        score = rsvd_score_fft(hankel_past, x0, fft_length, k=5, subspace_iteration_q=3, oversampling_p=5,
                                length_windows=window_length, number_windows=window_number, random_state=random_state)
 
     elif key == "naive rsvd":
@@ -432,7 +434,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
 
         # get the first singular vector of the future hankel matrix
-        x0, _, _ = randomized_hankel_svd_naive(hankel_future, k=1, subspace_iteration_q=2, oversampling_p=6,
+        x0, _, _ = randomized_hankel_svd_naive(hankel_future, k=1, subspace_iteration_q=3, oversampling_p=9,
                                                length_windows=window_length, number_windows=window_number,
                                                random_state=random_state)
 
@@ -440,7 +442,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
 
         # compute the scoring using the ika naive implementation
-        score = rsvd_score_naive(hankel_past, x0, k=5, subspace_iteration_q=2, oversampling_p=2,
+        score = rsvd_score_naive(hankel_past, x0, k=5, subspace_iteration_q=3, oversampling_p=5,
                                  length_windows=window_length, number_windows=window_number, random_state=random_state)
 
     elif key == "fft ika":
@@ -578,6 +580,70 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
     return results
 
 
+def process_simulated_signal(window_length: int, result_keys: list[str], reference: str = "naive svd",
+                             thread_limit: int = 4) -> dict[str:(float, float, int)]:
+
+    # specify the keys of the functions we plan to use (and make sure they are unique)
+    function_keys = ["naive svd", "naive rsvd", "fft rsvd", "naive ika", "fft ika"]
+    assert len(set(function_keys)) == len(function_keys), f"Function keys must not contain duplicates."
+    assert reference == function_keys[0], f"{reference} has to be the first function key. Specified: {function_keys}."
+
+    # create the results dict
+    results = {col: [] for col in result_keys}
+
+    # limit the threads for the BLAS and numpy multiplications
+    with threadpool_limits(limits=thread_limit):
+
+        # create a random state so every function uses the same random state reliably
+        # mainly to take care of the future vector generation
+        seed = np.random.randint(1, 10_000_000)
+        rnd_state = np.random.RandomState(seed)
+
+        # create the signal generator
+        lag = window_length // 3
+        sig_length = 2*window_length - 1 + lag
+        sig_gen = cps.ChangeSimulator(sig_length, window_length+lag//2, rnd_state)
+
+        # go over all types of simulated signals
+        for name, signal in sig_gen.yield_signals():
+
+            # make a comparison value
+            cmp_val = np.NAN
+
+            # go over all the functions
+            for key in function_keys:
+
+                # compute the result
+                start = time.perf_counter_ns()
+                score = transform(signal, window_length, window_length, lag, sig_length, key, rnd_state)
+                elapsed = time.perf_counter_ns() - start
+
+                # check whether we have computed the reference value
+                if key == reference:
+                    cmp_val = score
+
+                    # check whether the comparison value is negative (too much)
+                    if cmp_val < -10*np.finfo(float).eps:
+                        assert cmp_val != np.NAN, f"Compare value is way lower than zero: {cmp_val}."
+                else:
+                    assert cmp_val != np.NAN, "We do not have a valid compare value, something is fishy."
+
+                # keep (value, error, time)
+                results["Generator"].append(name)
+                results["method"].append(key)
+                results["score"].append(score)
+                results["true-score"].append(cmp_val-score)
+                results["time"].append(elapsed)
+                results["cmp val"].append(cmp_val)
+                results["random seed"].append(seed)
+                results["window lengths"].append(window_length)
+                results["max. threads"].append(thread_limit)
+
+                # assert that every list in results has equal lengths
+                assert len(set(len(values) for values in results.values())) == 1, "Something went wrong with the results."
+    return results
+
+
 def run_comparison():
 
     # create different window sizes and specify the number of windows
@@ -630,4 +696,67 @@ def run_comparison():
         for value in results.values():
             value.clear()
 
-run_comparison()
+
+def run_simulated_comparison():
+
+    # create different window sizes and specify the number of windows
+    window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 5000, num=50))[::-1]]
+
+    # make the example results dict
+    results = {"Generator": [],
+               "method": [],
+               "score": [],
+               "true-score": [],
+               "time": [],
+               "cmp val": [],
+               "random seed": [],
+               "window lengths": [],
+               "max. threads": []}
+
+    # go through the signals and window sizes and compute the values
+    for window_size in window_sizes:
+        for _ in tqdm(range(100), desc=f"Computing for window size {window_size}"):
+            tmp_results = process_simulated_signal(window_size, list(results.keys()))
+            for key in results:
+                results[key].extend(tmp_results[key])
+
+        # check whether results are empty
+        if not results[list(results.keys())[0]]:
+            continue
+
+        # put into dataframe
+        df = pd.DataFrame(results)
+
+        # make a debug print for all the methods
+        methods = list(df["method"].unique())
+        print(f"\nWindow Size: {window_size} [supp. {df[df['method'] == methods[0]].shape[0]}].")
+        print("------------------------------------")
+        for method in methods:
+            tmp_df = df[df['method'] == method]
+            mape = tmp_df['true-score'].abs().mean()
+            elapsed = tmp_df["time"].mean()
+            print(f"Method {method:<15} error: {mape:0.10f} time: {elapsed/1_000_000:0.5f}.")
+
+        # save it under the window size and clear the results
+        df.to_csv(f"Results_WindowSize_{window_size}.csv")
+
+        # clear the lists
+        for value in results.values():
+            value.clear()
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Changepoint algorithms speed and accuracy comparison.')
+    parser.add_argument('-sim', '--simulated', type=bool, default=False,
+                        help='Specifies whether to use simulated or real signals.')
+    args = parser.parse_args()
+    if args.simulated:
+        print("Running comparison on simulated signals.")
+        run_simulated_comparison()
+    else:
+        print("Running comparison on real signals.")
+        run_comparison()
+
+
+if __name__ == '__main__':
+    main()
