@@ -11,6 +11,7 @@ import pandas as pd
 from tqdm import tqdm
 from threadpoolctl import threadpool_limits
 import argparse
+import warnings
 
 
 """
@@ -319,6 +320,308 @@ def tridiagonal_eigenvalues(alphas: np.ndarray, betas: np.ndarray, amount=-1):
 
 
 ########################################################################################################################
+# --------------------------------- Implicitly restarted Lanczos bi-diagonalization SST ------------------------------ #
+########################################################################################################################
+
+# this code is taken from and inspired by:
+# https://github.com/bwlewis/irlbpy and by the algorithms in the paper (especially algorithm 2.1)
+# Augmented Implicitly Restarted Lanczos Bidiagonalization Methods,
+# J. Baglama and L. Reichel, SIAM J. Sci. Comput.
+# 2005
+
+
+def orthogonalize(matrix1: np.ndarray, matrix2: np.ndarray):
+    """
+    Orthogonalize a vector or matrix Y against the columns of the matrix X.
+    This function requires that the column dimension of Y is less than X, and
+    that Y and X have the same number of rows.
+    """
+    return matrix1 - matrix2 @ (matrix2.T @ matrix1)
+
+
+# Simple utility function used to check linear dependencies during computation
+def invcheck(x):
+    eps2 = 2*np.finfo(float).eps
+    if x > eps2:
+        x = 1/x
+    else:
+        x = 0
+    # warnings.warn("Ill-conditioning encountered, result accuracy may be poor")
+    return x
+
+
+def irlb(hankel_matrix: np.ndarray, nu: int, tol: float = 0.0001, maxit: int = 50):
+    """Estimate a few of the largest singular values and corresponding singular
+    vectors of matrix using the implicitly restarted Lanczos bidiagonalization
+    method of Baglama and Reichel, see:
+
+    Augmented Implicitly Restarted Lanczos Bidiagonalization Methods,
+    J. Baglama and L. Reichel, SIAM J. Sci. Comput.
+    2005
+
+    Keyword arguments:
+    tol -- An estimation tolerance. Smaller means more accurate estimates.
+    maxit -- Maximum number of Lanczos iterations allowed.
+
+    Given an input matrix A of dimension j * k, and an input desired number
+    of singular values nu, the function returns a tuple X with five entries:
+
+    X[0] A j * nu matrix of estimated left singular vectors.
+    X[1] A vector of length nu of estimated singular values.
+    X[2] A k * nu matrix of estimated right singular vectors.
+    X[3] The number of Lanczos iterations run.
+    X[4] The number of matrix-vector products run.
+
+    The algorithm estimates the truncated singular value decomposition:
+    A.dot(X[2]) = X[0]*X[1].
+    """
+    m = hankel_matrix.shape[0]
+    n = hankel_matrix.shape[1]
+
+    m_b = min((nu+20, 3*nu, n))  # Working dimension size
+    mprod = 0
+    it = 0
+    j = 0
+    k = nu
+    smax = 1
+
+    # initialize the helper matrices
+    V = np.zeros((n, m_b))
+    W = np.zeros((m, m_b))
+    F = np.zeros((n, 1))
+    B = np.zeros((m_b, m_b))
+    V[:, 0] = np.random.randn(n)  # Initial vector
+    V[:, 0] = V[:, 0]/np.linalg.norm(V)  # normalize initial vector
+
+    # define some stuff, so it exists (but throws an error if not initialized properly)
+    left_eigvecs = None
+    eigvals = None
+    right_eigvecs = None
+
+    # go through the iterations (use for in range instead of while as it is marginally faster)
+    # and break as soon as we hit convergence
+    for it in range(maxit):
+        if it > 0:
+            j = k
+        W[:, j] = hankel_matrix @ V[:, j]
+        mprod += 1
+        if it > 0:
+            W[:, j] = orthogonalize(W[:, j], W[:, 0:j])  # NB W[:,0:j] selects columns 0,1,...,j-1
+        s = np.linalg.norm(W[:, j])
+        sinv = invcheck(s)
+        W[:, j] = sinv*W[:, j]
+
+        # Lanczos process
+        while j < m_b:
+            F = W[:, j] @ hankel_matrix
+            mprod += 1
+            F = F - s*V[:, j]
+            F = orthogonalize(F, V[:, 0:j+1])
+            fn = np.linalg.norm(F)
+            fninv = invcheck(fn)
+            F  = fninv * F
+            if j < m_b-1:
+                V[:, j+1] = F
+                B[j, j] = s
+                B[j, j+1] = fn
+                W[:, j+1] = hankel_matrix @ V[:, j+1]
+                mprod += 1
+                # One step of classical Gram-Schmidt...
+                W[:, j+1] = W[:, j+1] - fn*W[:, j]
+                # ...with full re-orthogonalization
+                W[:, j+1] = orthogonalize(W[:, j+1], W[:, 0:(j+1)])
+                s = np.linalg.norm(W[:, j+1])
+                sinv = invcheck(s)
+                W[:, j+1] = sinv * W[:, j+1]
+            else:
+                B[j, j] = s
+            j += 1
+
+        # end of the lanczos process
+        left_eigvecs, eigvals, right_eigvecs = np.linalg.svd(B)
+        R = fn * left_eigvecs[m_b-1, :]  # Residuals
+        if it < 1:
+            smax = eigvals[0]  # Largest Ritz value
+        else:
+            smax = max((eigvals[0], smax))
+
+        conv = sum(np.abs(R[0:nu]) < tol * smax)
+        if conv < nu:  # Not converged yet
+            k = max(conv+nu, k)
+            k = min(k, m_b-3)
+        else:
+            break
+
+        # Update the Ritz vectors
+        V[:, 0:k] = V[:, 0:m_b].dot(right_eigvecs.transpose()[:, 0:k])
+        V[:, k] = F
+        B = np.diag(eigvals)
+        B[0:k, k] = R[0:k]
+        # Update the left approximate singular vectors
+        W[:, 0:k] = W[:, 0:m_b].dot(left_eigvecs[:, 0:k])
+
+    U = W[:, 0:m_b].dot(left_eigvecs[:, 0:nu])
+    V = V[:, 0:m_b].dot(right_eigvecs.transpose()[:, 0:nu])
+    return U, eigvals[0:nu], V, it, mprod
+
+
+def irlb_fft(hankel_fft_matrix: np.ndarray, nu: int, fft_length: int, windows_number: int, windows_length: int,
+             workers: int,  tol: float = 0.0001, maxit: int = 50):
+    """Estimate a few of the largest singular values and corresponding singular
+    vectors of matrix using the implicitly restarted Lanczos bidiagonalization
+    method of Baglama and Reichel, see:
+
+    Augmented Implicitly Restarted Lanczos Bidiagonalization Methods,
+    J. Baglama and L. Reichel, SIAM J. Sci. Comput.
+    2005
+
+    Keyword arguments:
+    tol -- An estimation tolerance. Smaller means more accurate estimates.
+    maxit -- Maximum number of Lanczos iterations allowed.
+
+    Given an input matrix A of dimension j * k, and an input desired number
+    of singular values nu, the function returns a tuple X with five entries:
+
+    X[0] A j * nu matrix of estimated left singular vectors.
+    X[1] A vector of length nu of estimated singular values.
+    X[2] A k * nu matrix of estimated right singular vectors.
+    X[3] The number of Lanczos iterations run.
+    X[4] The number of matrix-vector products run.
+
+    The algorithm estimates the truncated singular value decomposition:
+    A.dot(X[2]) = X[0]*X[1].
+    """
+    m = windows_length
+    n = windows_number
+
+    m_b = min((nu+20, 3*nu, n))  # Working dimension size
+    mprod = 0
+    it = 0
+    j = 0
+    k = nu
+    smax = 1
+
+    # initialize the helper matrices
+    V = np.zeros((n, m_b))
+    W = np.zeros((m, m_b))
+    F = np.zeros((n, 1))
+    B = np.zeros((m_b, m_b))
+    V[:, 0] = np.random.randn(n)  # Initial vector
+    V[:, 0] = V[:, 0]/np.linalg.norm(V)  # normalize initial vector
+
+    # define some stuff, so it exists (but throws an error if not initialized properly)
+    left_eigvecs = None
+    eigvals = None
+    right_eigvecs = None
+
+    # go through the iterations (use for in range instead of while as it is marginally faster)
+    # and break as soon as we hit convergence
+    for it in range(maxit):
+        if it > 0:
+            j = k
+
+        # W[:, j] = hankel_matrix @ V[:, j] using fft
+        W[:, j] = fast_hankel_matmul(hankel_fft_matrix, windows_length, fft_length, V[:, j], lag=1,
+                                     workers=workers)
+
+        mprod += 1
+        if it > 0:
+            W[:, j] = orthogonalize(W[:, j], W[:, 0:j])  # NB W[:,0:j] selects columns 0,1,...,j-1
+        s = np.linalg.norm(W[:, j])
+        sinv = invcheck(s)
+        W[:, j] = sinv*W[:, j]
+
+        # Lanczos process
+        while j < m_b:
+            # F = W[:, j] @ hankel_matrix using fft
+            F = fast_hankel_left_matmul(hankel_fft_matrix, windows_number, fft_length, W[:, j], lag=1,
+                                        workers=workers)
+            mprod += 1
+            F = F - s*V[:, j]
+            F = orthogonalize(F, V[:, 0:j+1])
+            fn = np.linalg.norm(F)
+            fninv = invcheck(fn)
+            F  = fninv * F
+            if j < m_b-1:
+                V[:, j+1] = F
+                B[j, j] = s
+                B[j, j+1] = fn
+                # W[:, j+1] = hankel_matrix @ V[:, j+1] using fft
+                W[:, j + 1] = fast_hankel_matmul(hankel_fft_matrix, windows_length, fft_length, V[:, j+1],
+                                                 lag=1, workers=workers)
+                mprod += 1
+                # One step of classical Gram-Schmidt...
+                W[:, j+1] = W[:, j+1] - fn*W[:, j]
+                # ...with full re-orthogonalization
+                W[:, j+1] = orthogonalize(W[:, j+1], W[:, 0:(j+1)])
+                s = np.linalg.norm(W[:, j+1])
+                sinv = invcheck(s)
+                W[:, j+1] = sinv * W[:, j+1]
+            else:
+                B[j, j] = s
+            j += 1
+
+        # end of the lanczos process
+        left_eigvecs, eigvals, right_eigvecs = np.linalg.svd(B)
+        R = fn * left_eigvecs[m_b-1, :]  # Residuals
+        if it < 1:
+            smax = eigvals[0]  # Largest Ritz value
+        else:
+            smax = max((eigvals[0], smax))
+
+        conv = sum(np.abs(R[0:nu]) < tol * smax)
+        if conv < nu:  # Not converged yet
+            k = max(conv+nu, k)
+            k = min(k, m_b-3)
+        else:
+            break
+
+        # Update the Ritz vectors
+        V[:, 0:k] = V[:, 0:m_b].dot(right_eigvecs.transpose()[:, 0:k])
+        V[:, k] = F
+        B = np.diag(eigvals)
+        B[0:k, k] = R[0:k]
+        # Update the left approximate singular vectors
+        W[:, 0:k] = W[:, 0:m_b].dot(left_eigvecs[:, 0:k])
+
+    U = W[:, 0:m_b].dot(left_eigvecs[:, 0:nu])
+    V = V[:, 0:m_b].dot(right_eigvecs.transpose()[:, 0:nu])
+    return U, eigvals[0:nu], V, it, mprod
+
+
+def rayleigh_ritz(hankel_matrix: np.ndarray, eigvec_future: np.ndarray, rank: int):
+    """
+    This function computes the change point score based on the krylov subspace approximation of the SST as proposed in
+    [1].
+    """
+
+    # compute the singular value decomposition of the hankel matrix
+    left_eigenvectors, *_ = irlb(hankel_matrix, rank, np.finfo(float).eps)
+
+    # compute the similarity score as defined in the ika sst paper and also return our u for the
+    # feedback loop in figure 3 of the paper
+    scores = left_eigenvectors.T @ eigvec_future
+    return 1 - (scores.T @ scores).sum()
+
+
+def rayleigh_ritz_fft(hankel_fft_matrix: np.ndarray, eigvec_future: np.ndarray, rank: int,
+                      fft_length: int, windows_number: int, windows_length: int, workers: int):
+    """
+    This function computes the change point score based on the krylov subspace approximation of the SST as proposed in
+    [1].
+    """
+
+    # compute the singular value decomposition of the hankel matrix
+    left_eigenvectors, *_ = irlb_fft(hankel_fft_matrix, rank, fft_length, windows_number, windows_length, workers,
+                                     np.finfo(float).eps)
+
+    # compute the similarity score as defined in the ika sst paper and also return our u for the
+    # feedback loop in figure 3 of the paper
+    scores = left_eigenvectors.T @ eigvec_future
+    return 1 - (scores.T @ scores).sum()
+
+
+########################################################################################################################
 # --------------------------------- Exact SST ------------------------------------------------------------------------ #
 ########################################################################################################################
 
@@ -326,7 +629,7 @@ def tridiagonal_eigenvalues(alphas: np.ndarray, betas: np.ndarray, amount=-1):
 def exact_svd(hankel_matrix: np.ndarray, eigvec_future: np.ndarray, rank: int) -> np.ndarray:
     """
     This function computes the change point score based on the krylov subspace approximation of the SST as proposed in
-    [1]. It uses the fft for the matrix multiplication.
+    [1].
     """
 
     # compute the singular value decomposition of the hankel matrix
@@ -364,14 +667,14 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
 
         # get the first singular matrix vector of future hankel matrix
         x0, _, _ = randomized_hankel_svd_fft(hankel_future, fft_length, k=1, subspace_iteration_q=3,
-                                             oversampling_p=9, length_windows=window_length,
+                                             oversampling_p=14, length_windows=window_length,
                                              number_windows=window_number, random_state=random_state, workers=workers)
 
         # compile the past hankel matrix (H1)
         hankel_past, fft_length, _ = compile_hankel_fft(time_series, end_idx - lag, window_length, window_number)
 
         # compute the scoring using the ika naive implementation
-        score = rsvd_score_fft(hankel_past, x0, fft_length, k=5, subspace_iteration_q=3, oversampling_p=5,
+        score = rsvd_score_fft(hankel_past, x0, fft_length, k=5, subspace_iteration_q=3, oversampling_p=10,
                                length_windows=window_length, number_windows=window_number, random_state=random_state,
                                workers=workers)
 
@@ -381,7 +684,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
 
         # get the first singular vector of the future hankel matrix
-        x0, _, _ = randomized_hankel_svd_naive(hankel_future, k=1, subspace_iteration_q=3, oversampling_p=9,
+        x0, _, _ = randomized_hankel_svd_naive(hankel_future, k=1, subspace_iteration_q=3, oversampling_p=14,
                                                length_windows=window_length, number_windows=window_number,
                                                random_state=random_state)
 
@@ -389,7 +692,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
 
         # compute the scoring using the ika naive implementation
-        score = rsvd_score_naive(hankel_past, x0, k=5, subspace_iteration_q=3, oversampling_p=5,
+        score = rsvd_score_naive(hankel_past, x0, k=5, subspace_iteration_q=3, oversampling_p=10,
                                  length_windows=window_length, number_windows=window_number, random_state=random_state)
 
     elif key == "naive ika":
@@ -420,6 +723,33 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
 
         # compute the scoring using the ika naive implementation
         score = exact_svd(hankel_past, x0, 5)
+    elif key == "naive irlb":
+
+        # compile the future hankel matrix (H2)
+        hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
+
+        # get the largest eigenvalue from decomposition
+        x0, *_ = irlb(hankel_future, 1)
+
+        # compile the past hankel matrix (H1)
+        hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
+
+        # compute the scoring using the naive irlb
+        score = rayleigh_ritz(hankel_past, x0, 5)
+
+    elif key == "fft irlb":
+
+        # compile the future hankel matrix (H2)
+        hankel_future, fft_length, _ = compile_hankel_fft(time_series, end_idx, window_length, window_number)
+
+        # get the first singular matrix vector of future hankel matrix
+        x0, *_ = irlb_fft(hankel_future, 1, fft_length, window_number, window_length, workers=workers)
+
+        # compile the past hankel matrix (H1)
+        hankel_past, fft_length, _ = compile_hankel_fft(time_series, end_idx - lag, window_length, window_number)
+
+        # compute the scoring using the naive irlb
+        score = rayleigh_ritz_fft(hankel_past, x0, 5, fft_length, window_number, window_length, workers=workers)
     else:
         raise ValueError(f"Key {key} not known.")
 
@@ -441,7 +771,7 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
         signal = filet[signal_key][:]
 
     # specify the keys of the functions we plan to use (and make sure they are unique)
-    function_keys = ["naive svd", "naive rsvd", "fft rsvd", "naive ika"]
+    function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft irlb", "fft rsvd", "naive ika"]
     assert len(set(function_keys)) == len(function_keys), f"Function keys must not contain duplicates."
     assert reference == function_keys[0], f"{reference} has to be the first function key. Specified: {function_keys}."
 
@@ -520,7 +850,7 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
                              thread_limit: int = 4) -> dict[str:(float, float, int)]:
 
     # specify the keys of the functions we plan to use (and make sure they are unique)
-    function_keys = ["naive svd", "naive rsvd", "fft rsvd", "naive ika"]
+    function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft irlb", "fft rsvd", "naive ika"]
     assert len(set(function_keys)) == len(function_keys), f"Function keys must not contain duplicates."
     assert reference == function_keys[0], f"{reference} has to be the first function key. Specified: {function_keys}."
 
@@ -528,7 +858,7 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
     results = {col: [] for col in result_keys}
 
     # limit the threads for the BLAS and numpy multiplications
-    with threadpool_limits(limits=thread_limit):
+    with threadpool_limits(limits=thread_limit, user_api='blas'):
 
         # create a random state so every function uses the same random state reliably
         # mainly to take care of the future vector generation
@@ -551,7 +881,7 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
 
                 # compute the result
                 start = time.perf_counter_ns()
-                score = transform(signal, window_length, window_length, lag, sig_length, key, rnd_state)
+                score = transform(signal, window_length, window_length, lag, sig_length, key, rnd_state, thread_limit)
                 elapsed = time.perf_counter_ns() - start
 
                 # check whether we have computed the reference value
@@ -616,7 +946,7 @@ def run_comparison():
         df = pd.DataFrame(results)
 
         # make a debug print for all the methods
-        methods = list(df["method"].unique())
+        methods = sorted(list(df["method"].unique()), key=lambda x: x[::-1])
         print(f"\nWindow Size: {window_size} [supp. {df[df['method'] == methods[0]].shape[0]}].")
         print("------------------------------------")
         for method in methods:
@@ -638,6 +968,9 @@ def run_simulated_comparison():
     # create different window sizes and specify the number of windows
     window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 5000, num=50))[::-1]]
 
+    # define the threadlimits used
+    threadlimits = [1, 2, 4, 6, 8]
+
     # make the example results dict
     results = {"Generator": [],
                "method": [],
@@ -651,7 +984,7 @@ def run_simulated_comparison():
 
     # go through the signals and window sizes and compute the values
     for window_size in window_sizes:
-        for thread_lim in [1, 2, 4, 6, 8, 10, 12]:
+        for thread_lim in threadlimits:
             for _ in tqdm(range(100), desc=f"Computing for window size {window_size} with {thread_lim} threads"):
                 tmp_results = process_simulated_signal(window_size, list(results.keys()), thread_limit=thread_lim)
                 for key in results:
@@ -665,8 +998,8 @@ def run_simulated_comparison():
         df = pd.DataFrame(results)
 
         # make a debug print for all the methods
-        methods = list(df["method"].unique())
-        print(f"\nWindow Size: {window_size} [supp. {df[df['method'] == methods[0]].shape[0]}].")
+        methods = sorted(list(df["method"].unique()), key=lambda x: x[::-1])
+        print(f"\nWindow Size threadlim {thread_lim}: {window_size} [supp. {df[df['method'] == methods[0]].shape[0]}].")
         print("------------------------------------")
         for method in methods:
             tmp_df = df[df['method'] == method]
@@ -682,9 +1015,16 @@ def run_simulated_comparison():
             value.clear()
 
 
+def boolean_string(s):
+    s = s.lower()
+    if s not in {'false', 'true'}:
+        raise ValueError('Not a valid boolean string')
+    return s == 'true'
+
+
 def main():
     parser = argparse.ArgumentParser(description='Changepoint algorithms speed and accuracy comparison.')
-    parser.add_argument('-sim', '--simulated', type=bool, default=False,
+    parser.add_argument('-sim', '--simulated', type=boolean_string, default=True,
                         help='Specifies whether to use simulated or real signals.')
     args = parser.parse_args()
     if args.simulated:
