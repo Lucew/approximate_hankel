@@ -138,7 +138,8 @@ def fast_hankel_matmul(hankel_fft: np.ndarray, l_windows, fft_shape: int, other_
     return mat_times_x.reshape(*return_shape)
 
 
-def fast_hankel_left_matmul(hankel_fft: np.ndarray, n_windows, fft_shape: int, other_matrix: np.ndarray, lag, workers=None):
+def fast_hankel_left_matmul(hankel_fft: np.ndarray, n_windows, fft_shape: int, other_matrix: np.ndarray, lag: int,
+                            workers: int = None):
     # This code has been inspired by:
     #
     # Scipy: https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.matmul_toeplitz.html
@@ -167,7 +168,7 @@ def fast_hankel_left_matmul(hankel_fft: np.ndarray, n_windows, fft_shape: int, o
     return mat_times_x.reshape(*return_shape).T
 
 
-def fast_fftconv_hankel_matmul(hankel_signal: np.ndarray, other_matrix: np.ndarray, lag, workers=None):
+def fast_fftconv_hankel_matmul(hankel_signal: np.ndarray, other_matrix: np.ndarray, lag: int, workers: int = None):
     # This code has been inspired by:
     #
     # Scipy: https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.matmul_toeplitz.html
@@ -189,7 +190,7 @@ def fast_fftconv_hankel_matmul(hankel_signal: np.ndarray, other_matrix: np.ndarr
     return result
 
 
-def fast_fftconv_hankel_left_matmul(hankel_signal: np.ndarray, other_matrix: np.ndarray, lag, workers=None):
+def fast_fftconv_hankel_left_matmul(hankel_signal: np.ndarray, other_matrix: np.ndarray, lag: int, workers: int =None):
     # This code has been inspired by:
     #
     # Scipy: https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.matmul_toeplitz.html
@@ -205,7 +206,7 @@ def fast_fftconv_hankel_left_matmul(hankel_signal: np.ndarray, other_matrix: np.
     return result
 
 
-def fast_convolve_hankel_matmul(hankel_signal: np.ndarray, other_matrix: np.ndarray, lag):
+def fast_convolve_hankel_matmul(hankel_signal: np.ndarray, other_matrix: np.ndarray, lag: int):
     if lag > 1:
         m, n = other_matrix.shape
         out = np.zeros((lag * m - lag + 1, n), dtype=other_matrix.dtype)
@@ -215,7 +216,7 @@ def fast_convolve_hankel_matmul(hankel_signal: np.ndarray, other_matrix: np.ndar
     return result
 
 
-def fast_torch_hankel_matmul(hankel_repr: torch.Tensor, other_matrix: torch.Tensor, lag):
+def fast_torch_hankel_matmul(hankel_repr: torch.Tensor, other_matrix: torch.Tensor, lag: int):
     with torch.no_grad():
         if lag > 1:
             m, b, n = other_matrix.shape
