@@ -1,9 +1,7 @@
-import collections
 import numpy as np
 import scipy.linalg
 
-from fastHankel import (fast_hankel_matmul, fast_hankel_left_matmul, get_fast_hankel_representation,
-                        hankel_fft_from_matrix)
+from fastHankel import fast_hankel_matmul, fast_hankel_left_matmul, get_fast_hankel_representation
 import changepoint_simulator as cps
 import scipy as sp
 import numba as nb
@@ -89,10 +87,14 @@ def compile_hankel_naive(time_series: np.ndarray, end_index: int, window_size: i
     # almost no faster way:
     # https://stackoverflow.com/questions/71410927/vectorized-way-to-construct-a-block-hankel-matrix-in-numpy-or-scipy
     hankel = np.empty((window_size, rank))
+    hankel.fill(np.NAN)
 
     # go through the time series and make the hankel matrix
     for cx in range(rank):
         hankel[:, -cx-1] = time_series[(end_index-window_size-cx*lag):(end_index-cx*lag)]
+
+    # check that we did not make a mistake
+    assert np.all(~np.isnan(hankel)), "Something is off, there are still NAN in the numpy array."
     return hankel
 
 
@@ -107,7 +109,7 @@ def compile_hankel_fft(time_series: np.ndarray, end_index: int, window_size: int
 
 def randomized_hankel_svd_fft(hankel_fft: np.ndarray, fft_length: int, k: int, subspace_iteration_q: int,
                               oversampling_p: int, length_windows: int, number_windows: int,
-                              random_state: np.random.RandomState):
+                              random_state: np.random.RandomState, workers: int):
     """
     Function for the randomized singular vector decomposition using [1].
     Implementation modified from: https://pypi.org/project/fbpca/
@@ -119,7 +121,8 @@ def randomized_hankel_svd_fft(hankel_fft: np.ndarray, fft_length: int, k: int, s
 
     # Apply A to a random matrix, obtaining Q.
     random_matrix_omega = random_state.uniform(low=-1, high=1, size=(number_windows, sample_length_l))
-    projection_matrix_q = fast_hankel_matmul(hankel_fft, length_windows, fft_length, random_matrix_omega, lag=1)
+    projection_matrix_q = fast_hankel_matmul(hankel_fft, length_windows, fft_length, random_matrix_omega, lag=1,
+                                             workers=workers)
 
     # Form a matrix Q whose columns constitute a well-conditioned basis for the columns of the earlier Q.
     if subspace_iteration_q == 0:
@@ -132,13 +135,13 @@ def randomized_hankel_svd_fft(hankel_fft: np.ndarray, fft_length: int, k: int, s
 
         # Q = fast_hankel_matmul(Q.T, A).conj().T
         projection_matrix_q = fast_hankel_left_matmul(hankel_fft, number_windows, fft_length,
-                                                      projection_matrix_q.T, lag=1).T
+                                                      projection_matrix_q.T, lag=1, workers=workers).T
 
         (projection_matrix_q, _) = sp.linalg.lu(projection_matrix_q, permute_l=True)
 
         # Q = mult(A, Q)
         projection_matrix_q = fast_hankel_matmul(hankel_fft, length_windows, fft_length, projection_matrix_q,
-                                                 lag=1)
+                                                 lag=1, workers=workers)
 
         if it + 1 < subspace_iteration_q:
             (projection_matrix_q, _) = sp.linalg.lu(projection_matrix_q, permute_l=True)
@@ -147,7 +150,8 @@ def randomized_hankel_svd_fft(hankel_fft: np.ndarray, fft_length: int, k: int, s
 
     # SVD Q'*A to obtain approximations to the singular values and right singular vectors of A; adjust the left singular
     # vectors of Q'*A to approximate the left singular vectors of A.
-    lower_space_hankel = fast_hankel_left_matmul(hankel_fft, number_windows, fft_length, projection_matrix_q.T, lag=1)
+    lower_space_hankel = fast_hankel_left_matmul(hankel_fft, number_windows, fft_length, projection_matrix_q.T, lag=1,
+                                                 workers=workers)
     (R, s, Va) = sp.linalg.svd(lower_space_hankel, full_matrices=False)
     U = projection_matrix_q.dot(R)
 
@@ -218,10 +222,10 @@ def rsvd_score_naive(hankel_matrix: np.ndarray, eigvec_future: np.ndarray, k: in
 
 def rsvd_score_fft(hankel_fft: np.ndarray, eigvec_future: np.ndarray, fft_length: int, k: int,
                    subspace_iteration_q: int, oversampling_p: int, length_windows: int, number_windows: int,
-                   random_state: np.random.RandomState):
+                   random_state: np.random.RandomState, workers: int):
     # get the eigenvectors and eigenvalues
     left_eigenvectors, _, _ = randomized_hankel_svd_fft(hankel_fft, fft_length, k, subspace_iteration_q, oversampling_p,
-                                                        length_windows, number_windows, random_state)
+                                                        length_windows, number_windows, random_state, workers=workers)
 
     # make the multiplication
     scores = left_eigenvectors.T @ eigvec_future
@@ -242,24 +246,6 @@ def implicit_krylov_approximation_naive(hankel_past: np.ndarray, eigvec_future: 
 
     # compute the tridiagonal matrix from the past hankel matrix
     alphas, betas = lanczos_naive(hankel_past, eigvec_future, lanczos_rank)
-
-    # compute the singular value decomposition of the tridiagonal matrix (only the biggest)
-    _, eigvecs = tridiagonal_eigenvalues(alphas, betas, rank)
-
-    # compute the similarity score as defined in the ika sst paper and also return our u for the
-    # feedback loop in figure 3 of the paper
-    return 1 - (eigvecs[0, :] * eigvecs[0, :]).sum()
-
-
-def implicit_krylov_approximation_fft(hankel_fft: np.ndarray, fft_length: int, length_windows: int,
-                                      eigvec_future: np.ndarray, rank: int, lanczos_rank: int) -> (float, np.ndarray):
-    """
-    This function computes the change point score based on the krylov subspace approximation of the SST as proposed in
-    [1]. It uses the fft for the matrix multiplication.
-    """
-
-    # compute the tridiagonal matrix from the past hankel matrix
-    alphas, betas = lanczos_fft(hankel_fft, fft_length, length_windows, eigvec_future, lanczos_rank)
 
     # compute the singular value decomposition of the tridiagonal matrix (only the biggest)
     _, eigvecs = tridiagonal_eigenvalues(alphas, betas, rank)
@@ -292,46 +278,6 @@ def lanczos_naive(a_matrix: np.ndarray, r_0: np.ndarray, k: int) -> (np.ndarray,
 
         # compute inner product of new_q and hankel matrix
         inner_prod = a_matrix @ new_q
-
-        # compute the new alpha
-        alphas[j + 1] = new_q.T @ inner_prod
-
-        # compute the new r
-        r_i = inner_prod - alphas[j + 1] * new_q - betas[j] * q_i
-
-        # compute the next beta
-        betas[j + 1] = np.linalg.norm(r_i)
-
-        # update the previous q
-        q_i = new_q
-
-    return alphas[1:], betas[1:-1]
-
-
-def lanczos_fft(hankel_fft: np.ndarray, fft_length: int, length_windows: int, r_0: np.ndarray,
-                k: int) -> (np.ndarray, np.ndarray):
-    """
-    This function computes the tri-diagonalization matrix from the square matrix C which is the result of the lanczos
-    algorithm. It uses the fft for the matrix multiplication.
-
-    The algorithm has been described and proven in [1]
-    """
-
-    # save the initial vector
-    r_i = r_0
-    q_i = np.zeros_like(r_i)
-
-    # initialization of the diagonal elements
-    alphas = np.zeros(shape=(k + 1,), dtype=np.float64)
-    betas = np.ones(shape=(k + 1,), dtype=np.float64)
-
-    # Subroutine 1 of the paper
-    for j in range(k):
-        # compute r_(j+1)
-        new_q = r_i / betas[j]
-
-        # compute inner product of new_q and hankel matrix
-        inner_prod = fast_hankel_matmul(hankel_fft, length_windows, fft_length, new_q, lag=1)
 
         # compute the new alpha
         alphas[j + 1] = new_q.T @ inner_prod
@@ -399,7 +345,7 @@ def exact_svd(hankel_matrix: np.ndarray, eigvec_future: np.ndarray, rank: int) -
 
 
 def transform(time_series: np.ndarray, window_length: int, window_number: int, lag: int, end_idx: int,
-              key: str, random_state: np.random.RandomState, power_iterations: int = 20) -> float:
+              key: str, random_state: np.random.RandomState, workers: int, power_iterations: int = 20) -> float:
 
     # check that the time series fits and we did not make an error
     assert len(time_series) >= end_idx, f"Time series is too short ({time_series.shape}) for start: {end_idx}."
@@ -419,14 +365,15 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         # get the first singular matrix vector of future hankel matrix
         x0, _, _ = randomized_hankel_svd_fft(hankel_future, fft_length, k=1, subspace_iteration_q=3,
                                              oversampling_p=9, length_windows=window_length,
-                                             number_windows=window_number, random_state=random_state)
+                                             number_windows=window_number, random_state=random_state, workers=workers)
 
         # compile the past hankel matrix (H1)
         hankel_past, fft_length, _ = compile_hankel_fft(time_series, end_idx - lag, window_length, window_number)
 
         # compute the scoring using the ika naive implementation
         score = rsvd_score_fft(hankel_past, x0, fft_length, k=5, subspace_iteration_q=3, oversampling_p=5,
-                               length_windows=window_length, number_windows=window_number, random_state=random_state)
+                               length_windows=window_length, number_windows=window_number, random_state=random_state,
+                               workers=workers)
 
     elif key == "naive rsvd":
 
@@ -444,21 +391,6 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         # compute the scoring using the ika naive implementation
         score = rsvd_score_naive(hankel_past, x0, k=5, subspace_iteration_q=3, oversampling_p=5,
                                  length_windows=window_length, number_windows=window_number, random_state=random_state)
-
-    elif key == "fft ika":
-
-        # compile the future hankel matrix (H2)
-        hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
-
-        # make the power iterations
-        _, x0 = power_method(hankel_future, x0, power_iterations)
-
-        # compile the past hankel matrix (H1) and compute outer product C as in the paper
-        hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
-        hankel_past = hankel_past @ hankel_past.T
-
-        # compute the scoring using the ika naive implementation
-        score = implicit_krylov_approximation_naive(hankel_past, x0, 5, 9)
 
     elif key == "naive ika":
 
@@ -509,7 +441,7 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
         signal = filet[signal_key][:]
 
     # specify the keys of the functions we plan to use (and make sure they are unique)
-    function_keys = ["naive svd", "naive rsvd", "fft rsvd", "naive ika", "fft ika"]
+    function_keys = ["naive svd", "naive rsvd", "fft rsvd", "naive ika"]
     assert len(set(function_keys)) == len(function_keys), f"Function keys must not contain duplicates."
     assert reference == function_keys[0], f"{reference} has to be the first function key. Specified: {function_keys}."
 
@@ -549,9 +481,13 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
                 end_idx = (chx+1)*chunk_length
 
                 # compute the result
-                start = time.perf_counter_ns()
-                score = transform(signal, window_length, window_length, lag, end_idx, key, rnd_state)
-                elapsed = time.perf_counter_ns() - start
+                try:
+                    start = time.perf_counter_ns()
+                    score = transform(signal, window_length, window_length, lag, end_idx, key, rnd_state, thread_limit)
+                    elapsed = time.perf_counter_ns() - start
+                except np.linalg.LinAlgError:
+                    print(f"There is something wrong with signal {signal_key} in chunk {chx}.")
+                    break
 
                 # check whether we have computed the reference value
                 if key == reference:
@@ -584,7 +520,7 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
                              thread_limit: int = 4) -> dict[str:(float, float, int)]:
 
     # specify the keys of the functions we plan to use (and make sure they are unique)
-    function_keys = ["naive svd", "naive rsvd", "fft rsvd", "naive ika", "fft ika"]
+    function_keys = ["naive svd", "naive rsvd", "fft rsvd", "naive ika"]
     assert len(set(function_keys)) == len(function_keys), f"Function keys must not contain duplicates."
     assert reference == function_keys[0], f"{reference} has to be the first function key. Specified: {function_keys}."
 
@@ -715,10 +651,11 @@ def run_simulated_comparison():
 
     # go through the signals and window sizes and compute the values
     for window_size in window_sizes:
-        for _ in tqdm(range(100), desc=f"Computing for window size {window_size}"):
-            tmp_results = process_simulated_signal(window_size, list(results.keys()))
-            for key in results:
-                results[key].extend(tmp_results[key])
+        for thread_lim in [1, 2, 4, 6, 8, 10, 12]:
+            for _ in tqdm(range(100), desc=f"Computing for window size {window_size} with {thread_lim} threads"):
+                tmp_results = process_simulated_signal(window_size, list(results.keys()), thread_limit=thread_lim)
+                for key in results:
+                    results[key].extend(tmp_results[key])
 
         # check whether results are empty
         if not results[list(results.keys())[0]]:
