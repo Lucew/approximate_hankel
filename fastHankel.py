@@ -118,6 +118,13 @@ def fast_hankel_matmul(hankel_fft: np.ndarray, l_windows, fft_shape: int, other_
         workers = os.cpu_count()//2
 
     # save the shape of the matrix
+    ndim = other_matrix.ndim
+    if ndim == 1:
+        other_matrix = other_matrix[:, None]
+    elif ndim == 2:
+        pass
+    else:
+        raise ValueError("Other matrix has to have an ndim of one or two.")
     m, n = other_matrix.shape
 
     # make fft of x (while padding x with zeros)
@@ -134,7 +141,7 @@ def fast_hankel_matmul(hankel_fft: np.ndarray, l_windows, fft_shape: int, other_
     # https://dsp.stackexchange.com/questions/83461/phase-of-an-fft-after-zeropadding
     mat_times_x = sp.fft.irfft(hankel_fft*fft_x, axis=0, n=fft_shape, workers=workers)[(m-1)*lag:(m-1)*lag+l_windows, :]
 
-    return_shape = (l_windows,) if len(other_matrix.shape) == 1 else (l_windows, n)
+    return_shape = (l_windows,) if ndim == 1 else (l_windows, n)
     return mat_times_x.reshape(*return_shape)
 
 
@@ -156,6 +163,13 @@ def fast_hankel_left_matmul(hankel_fft: np.ndarray, n_windows, fft_shape: int, o
     other_matrix = other_matrix.T
 
     # save the shape of the matrix
+    ndim = other_matrix.ndim
+    if ndim == 1:
+        other_matrix = other_matrix[:, None]
+    elif ndim == 2:
+        pass
+    else:
+        raise ValueError("Other matrix has to have an ndim of one or two.")
     m, n = other_matrix.shape
 
     # make fft of x (while padding x with zeros)
@@ -164,7 +178,7 @@ def fast_hankel_left_matmul(hankel_fft: np.ndarray, n_windows, fft_shape: int, o
     # compute the inverse fft
     mat_times_x = sp.fft.irfft(hankel_fft * fft_x, axis=0, n=fft_shape, workers=workers)[(m-1):(m-1)+n_windows*lag:lag]
 
-    return_shape = (n_windows,) if len(other_matrix.shape) == 1 else (n_windows, n)
+    return_shape = (n_windows,) if ndim == 1 else (n_windows, n)
     return mat_times_x.reshape(*return_shape).T
 
 
