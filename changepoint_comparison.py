@@ -825,7 +825,8 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
 
                     # check whether the comparison value is negative (too much)
                     if cmp_val < -10*np.finfo(float).eps:
-                        assert cmp_val != np.NAN, f"Compare value is way lower than zero: {cmp_val}."
+                        print(f"Compare value is way lower than zero {cmp_val} for signal {signal_key} in chunk {chx}.")
+                        break
                 else:
                     assert cmp_val != np.NAN, "We do not have a valid compare value, something is fishy."
 
