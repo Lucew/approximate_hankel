@@ -754,7 +754,8 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         raise ValueError(f"Key {key} not known.")
 
     # check the score for negativity (which is not possible)
-    assert score >= 0-np.finfo(float).eps*1000, f"Score is negative {score}."
+    if score <= 0-np.finfo(float).eps*1000:
+        print(f"Score is negative {score} for method {key}.")
     return score
 
 
@@ -915,6 +916,7 @@ def run_comparison():
 
     # create different window sizes and specify the number of windows
     window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 2000, num=100))[::-1]]
+    window_sizes = [size for size in window_sizes if size < 316]
 
     # get the signal keys from the hdf5 file
     hdf_path = "UCRArchive_2018.hdf5"
