@@ -8,6 +8,7 @@ import numba as nb
 import torch
 from threadpoolctl import threadpool_limits
 import os
+import concurrent.futures
 
 
 def compile_hankel(time_series: np.ndarray, end_index: int, window_size: int, rank: int, lag: int = 1) -> np.ndarray:
@@ -92,7 +93,8 @@ def get_fast_hankel_representation(time_series, end_index, length_windows, numbe
     # padded_toeplitz = np.concatenate((last_column, np.zeros((fft_len - combined_length)), row_without_last_element))
     #
     # but we want to use the built-in padding functionality of the fft in scipy, so we pad at the end like can be seen
-    # here. This introduces and linear phase and shift to the fft, which we need to account for in the reverse
+    # here.
+    # This introduces a linear phase and a shift to the fft, which we need to account for in the reverse
     # functions.
     #
     # More details see:
@@ -180,6 +182,93 @@ def fast_hankel_left_matmul(hankel_fft: np.ndarray, n_windows, fft_shape: int, o
 
     return_shape = (n_windows,) if ndim == 1 else (n_windows, n)
     return mat_times_x.reshape(*return_shape).T
+
+
+def fast_hankel_vecmul(hankel_fft: np.ndarray, fft_shape: int, l_windows: int, m: int, vector: np.ndarray, lag: int,
+                       result_buffer: np.ndarray, index: int):
+
+    # compute the fft of the vector
+    fft_x = sp.fft.rfft(vector[:, index], n=fft_shape, workers=1)
+
+    # multiply the ffts with each other to do the convolution in frequency domain and convert it back
+    # and save it into the output buffer
+    result_buffer[:, index] = sp.fft.irfft(hankel_fft*fft_x, n=fft_shape, workers=1)[(m-1)*lag:(m-1)*lag+l_windows]
+
+
+def fast_parallel_hankel_matmul(hankel_fft: np.ndarray, l_windows, fft_shape: int, other_matrix: np.ndarray, lag: int,
+                                threadpool: concurrent.futures.ThreadPoolExecutor):
+
+    # check whether we need to make the hankel fft 1D
+    hankel_ndim = hankel_fft.ndim
+    if hankel_ndim == 1:
+        pass
+    elif hankel_ndim == 2 and hankel_fft.shape[1] == 1:
+        hankel_fft = hankel_fft[:, 0]
+    else:
+        raise ValueError("Hankel representation is off.")
+
+    # make fft of x (while padding x with zeros) to make up for the lag
+    m, n = other_matrix.shape
+    if lag > 1:
+        out = np.zeros((lag * m - lag + 1, n), dtype=other_matrix.dtype)
+        out[::lag, :] = other_matrix
+        other_matrix = out
+
+    # create the new empty matrix that we will fill with values
+    result_buffer = np.empty((l_windows, n))
+
+    # flip the other matrix
+    other_matrix = np.flipud(other_matrix)
+
+    # make the multithreading using a process pool
+    futures = [threadpool.submit(fast_hankel_vecmul, hankel_fft, fft_shape, l_windows, m, other_matrix, lag,
+                                 result_buffer, idx)
+               for idx in range(other_matrix.shape[1])]
+    concurrent.futures.wait(futures)
+    return result_buffer
+
+
+def fast_hankel_left_vecmul(hankel_fft: np.ndarray, fft_shape: int, n_windows: int, m: int, vector: np.ndarray,
+                            lag: int, result_buffer: np.ndarray, index: int):
+
+    # compute the fft of the vector
+    fft_x = sp.fft.rfft(vector[:, index], n=fft_shape, workers=1)
+
+    # multiply the ffts with each other to do the convolution in frequency domain and convert it back
+    # and save it into the output buffer
+    result_buffer[:, index] = sp.fft.irfft(hankel_fft*fft_x, n=fft_shape, workers=1)[(m-1):(m-1)+n_windows*lag:lag]
+
+
+def fast_parallel_hankel_left_matmul(hankel_fft: np.ndarray, n_windows, fft_shape: int, other_matrix: np.ndarray,
+                                     lag: int, threadpool: concurrent.futures.ThreadPoolExecutor):
+
+    # check whether we need to make the hankel fft 1D
+    hankel_ndim = hankel_fft.ndim
+    if hankel_ndim == 1:
+        pass
+    elif hankel_ndim == 2 and hankel_fft.shape[1] == 1:
+        hankel_fft = hankel_fft[:, 0]
+    else:
+        raise ValueError("Hankel representation is off.")
+
+    # transpose the other matrix
+    other_matrix = other_matrix.T
+
+    # flip the other matrix
+    other_matrix = np.flipud(other_matrix)
+
+    # get the shape of the other matrix
+    m, n = other_matrix.shape
+
+    # create the new empty matrix that we will fill with values
+    result_buffer = np.empty((n_windows, n))
+
+    # make the multithreading using a process pool
+    futures = [threadpool.submit(fast_hankel_left_vecmul, hankel_fft, fft_shape, n_windows, m, other_matrix, lag,
+                                 result_buffer, idx)
+               for idx in range(other_matrix.shape[1])]
+    concurrent.futures.wait(futures)
+    return result_buffer.T
 
 
 def fast_fftconv_hankel_matmul(hankel_signal: np.ndarray, other_matrix: np.ndarray, lag: int, workers: int = None):
@@ -335,6 +424,20 @@ def probe_fast_hankel_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, oth
 
 def probe_fast_hankel_left_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag, comment: str):
     way_one = fast_hankel_left_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag)
+    way_two = normal_hankel_left_matmul(hankel_matrix, other_matrix)
+    return evaluate_closeness(way_one, way_two, comment)
+
+
+def probe_fast_parallel_hankel_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag, threadpool,
+                                      comment: str):
+    way_one = fast_parallel_hankel_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag, threadpool)
+    way_two = normal_hankel_matmul(hankel_matrix, other_matrix)
+    return evaluate_closeness(way_one, way_two, comment)
+
+
+def probe_fast_parallel_hankel_left_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag,
+                                           threadpool, comment: str):
+    way_one = fast_parallel_hankel_left_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag, threadpool)
     way_two = normal_hankel_left_matmul(hankel_matrix, other_matrix)
     return evaluate_closeness(way_one, way_two, comment)
 
@@ -497,11 +600,11 @@ def run_measurements(thread_counts: list[int],
 
 def main():
     # define some window length
-    limit_threads = 12
-    l_windows = 1000
-    n_windows = 1000
+    limit_threads = 6
+    l_windows = 10000
+    n_windows = 10000
     lag = 1
-    run_num = 1000
+    run_num = 500
 
     # create a time series of a certain length
     n = 30000
@@ -509,8 +612,9 @@ def main():
     ts = np.linspace(0, n, n+1)
 
     # create a matrix to multiply by
-    multi = np.random.uniform(size=(n_windows, 10))
-    multi2 = np.random.uniform(size=(10, l_windows))
+    k = 20
+    multi = np.random.uniform(size=(n_windows, k))
+    multi2 = np.random.uniform(size=(k, l_windows))
 
     # get the final index of the time series
     end_idx = l_windows+lag*(n_windows-1)
@@ -526,10 +630,15 @@ def main():
     torch_mat = torch_mat[:, None, :]
     torch_mat = torch_mat.transpose(0, 2)
 
+    # create the threadpool executor for the parallel execution
+    pool = concurrent.futures.ThreadPoolExecutor(limit_threads)
+
     # test the faster multiplication
     results = []
     results.append(probe_fast_hankel_matmul(hankel_rfft, l_windows, fft_len, hankel, multi, lag, 'Matmul working?'))
     results.append(probe_fast_hankel_left_matmul(hankel_rfft, n_windows, fft_len, hankel, multi2, lag, 'Left Matmul working?'))
+    results.append(probe_fast_parallel_hankel_matmul(hankel_rfft, l_windows, fft_len, hankel, multi, lag, pool, 'Parallel Matmul working?'))
+    results.append(probe_fast_parallel_hankel_left_matmul(hankel_rfft, n_windows, fft_len, hankel, multi2, lag, pool, 'Parallel Left Matmul working?'))
     results.append(probe_fast_torch_hankel_matmul(torch_sig, hankel, multi, torch_mat, lag, 'Matmul torch working?'))
     results.append(probe_fast_convolve_hankel_matmul(signal, hankel, multi, lag, 'Matmul convolve working?'))
     results.append(probe_fast_fftconvolve_hankel_matmul(signal, hankel, multi, lag, 'Matmul fftconvolve working?'))
@@ -552,6 +661,10 @@ def main():
         print("Times for Own:")
         print(timeit.timeit(lambda: fast_hankel_matmul(hankel_rfft, l_windows, fft_len, multi, lag, workers=limit_threads), number=run_num)/run_num*1000+rfft_time)
         print(timeit.timeit(lambda: fast_hankel_left_matmul(hankel_rfft, n_windows, fft_len, multi2, lag, workers=limit_threads), number=run_num) / run_num * 1000+rfft_time)
+
+        print("Times for Own parallel:")
+        print(timeit.timeit(lambda: fast_parallel_hankel_matmul(hankel_rfft, l_windows, fft_len, multi, lag, threadpool=pool), number=run_num) / run_num * 1000 + rfft_time)
+        print(timeit.timeit(lambda: fast_parallel_hankel_left_matmul(hankel_rfft, n_windows, fft_len, multi2, lag, threadpool=pool), number=run_num) / run_num * 1000 + rfft_time)
 
         print("Times for FFTconv:")
         print(timeit.timeit(lambda: fast_fftconv_hankel_matmul(signal, multi, lag, workers=limit_threads), number=run_num) / run_num * 1000)
