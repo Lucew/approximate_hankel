@@ -74,12 +74,12 @@ def main():
     # execute the function and measure the time
     with threadpool_limits(limits=limit_threads):
         with concurrent.futures.ThreadPoolExecutor(limit_threads) as pool:
-            print(timeit.timeit(lambda: fast_hankel_matmul(hankel_rfft, l_windows, fft_len, multi, threadpool=pool), number=run_num)/run_num*1000)
+            print(timeit.timeit(lambda: fast_hankel_matmul_parallel(hankel_rfft, l_windows, fft_len, multi, threadpool=pool), number=run_num)/run_num*1000)
             hankel_rfft2 = hankel_rfft[:, None]
             print(timeit.timeit(lambda: fast_hankel_matmul2(hankel_rfft2, l_windows, fft_len, multi, lag, workers=limit_threads), number=run_num)/run_num*1000)
 
             # check whether the results are the same
-            a = fast_hankel_matmul(hankel_rfft, l_windows, fft_len, multi, threadpool=pool)
+            a = fast_hankel_matmul_parallel(hankel_rfft, l_windows, fft_len, multi, threadpool=pool)
             b = fast_hankel_matmul2(hankel_rfft2, l_windows, fft_len, multi, lag, workers=limit_threads)
             print(np.allclose(a, b))
 
