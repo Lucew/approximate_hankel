@@ -191,7 +191,8 @@ def fast_hankel_vecmul(hankel_fft: np.ndarray, fft_shape: int, l_windows: int, m
     fft_x = sp.fft.rfft(vector[:, index], n=fft_shape, workers=1)
 
     # multiply the ffts with each other to do the convolution in frequency domain and convert it back
-    # and save it into the output buffer
+    # and save it into the output buffer.
+    # also take into account the phase shift as explained in the non-parallel version of this function
     result_buffer[:, index] = sp.fft.irfft(hankel_fft*fft_x, n=fft_shape, workers=1)[(m-1)*lag:(m-1)*lag+l_windows]
 
 
@@ -235,7 +236,8 @@ def fast_hankel_left_vecmul(hankel_fft: np.ndarray, fft_shape: int, n_windows: i
     fft_x = sp.fft.rfft(vector[:, index], n=fft_shape, workers=1)
 
     # multiply the ffts with each other to do the convolution in frequency domain and convert it back
-    # and save it into the output buffer
+    # and save it into the output buffer.
+    # also take into account the phase shift as explained in the non-parallel version of this function
     result_buffer[:, index] = sp.fft.irfft(hankel_fft*fft_x, n=fft_shape, workers=1)[(m-1):(m-1)+n_windows*lag:lag]
 
 
@@ -601,8 +603,8 @@ def run_measurements(thread_counts: list[int],
 def main():
     # define some window length
     limit_threads = 6
-    l_windows = 10000
-    n_windows = 10000
+    l_windows = 5000
+    n_windows = 5000
     lag = 1
     run_num = 500
 
@@ -612,7 +614,7 @@ def main():
     ts = np.linspace(0, n, n+1)
 
     # create a matrix to multiply by
-    k = 20
+    k = 15
     multi = np.random.uniform(size=(n_windows, k))
     multi2 = np.random.uniform(size=(k, l_windows))
 
