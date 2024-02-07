@@ -9,3 +9,7 @@ pandas
 pytorch
 threadpoolctl
 numba
+
+# things that we need for numba fft parallelization
+rocket-fft
+tbb
