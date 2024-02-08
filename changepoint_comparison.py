@@ -974,7 +974,7 @@ def run_simulated_comparison():
     window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 5000, num=50))[::-1]]
 
     # define the threadlimits used
-    threadlimits = [1, 2, 4, 6, 8]
+    threadlimits = [1, 2, 4, 6, 8, 10]
 
     # make the example results dict
     results = {"Generator": [],
