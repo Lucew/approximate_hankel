@@ -697,6 +697,33 @@ def run_measurements(thread_counts: list[int],
     df.to_csv("Results_HankelMult_OwnParallel.csv")
 
 
+def trigger_numba_matmul_jit():
+
+    # make some definitions
+    limit_threads = 2
+    l_windows = 1000
+    n_windows = 1000
+
+    # get the final index of the time series
+    end_idx = l_windows + (n_windows - 1)
+
+    # create a time series of a certain length
+    n = end_idx+10
+    ts = np.linspace(0, n, n + 1)
+
+    # create a matrix to multiply by
+    k = 15
+    multi = np.random.uniform(size=(n_windows, k))
+
+    # get hankel representations
+    hankel_rfft, fft_len, signal = get_fast_hankel_representation(ts, end_idx, l_windows, n_windows, 1)
+
+    # trigger the jit compilations
+    numba.set_num_threads(limit_threads)
+    fast_numba_hankel_left_matmul(hankel_rfft[:, 0], n_windows, fft_len, multi, 1)
+    fast_numba_hankel_matmul(hankel_rfft[:, 0], l_windows, fft_len, multi, 1)
+
+
 def main():
     # define some window length
     limit_threads = 12
@@ -717,7 +744,7 @@ def main():
     multi2 = np.random.uniform(size=(k, l_windows))
 
     # get the final index of the time series
-    end_idx = l_windows+lag*(n_windows-1)
+    end_idx = l_windows + lag * (n_windows - 1)
 
     # get both hankel representations
     hankel_rfft, fft_len, signal = get_fast_hankel_representation(ts, end_idx, l_windows, n_windows, lag)
