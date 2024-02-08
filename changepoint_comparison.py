@@ -1,10 +1,5 @@
 import numpy as np
 import scipy.linalg
-
-from fastHankel import fast_numba_hankel_matmul as fast_hankel_matmul
-from fastHankel import fast_numba_hankel_left_matmul as fast_hankel_left_matmul
-from fastHankel import get_fast_hankel_representation
-import changepoint_simulator as cps
 import scipy as sp
 import numba as nb
 import h5py
@@ -13,7 +8,18 @@ import pandas as pd
 from tqdm import tqdm
 from threadpoolctl import threadpool_limits
 import argparse
-import warnings
+import numba
+
+# hankel matmul functions
+from fastHankel import fast_numba_hankel_matmul as fast_hankel_matmul
+from fastHankel import fast_numba_hankel_left_matmul as fast_hankel_left_matmul
+from fastHankel import get_fast_hankel_representation
+from fastHankel import trigger_numba_matmul_jit
+
+# simulations of signals
+import changepoint_simulator as cps
+
+
 
 
 """
@@ -103,7 +109,8 @@ def compile_hankel_naive(time_series: np.ndarray, end_index: int, window_size: i
 
 def compile_hankel_fft(time_series: np.ndarray, end_index: int, window_size: int, rank: int,
                        lag: int = 1) -> (np.ndarray, int, np.ndarray):
-    return get_fast_hankel_representation(time_series, end_index, window_size, rank, lag=lag)
+    hankel_rfft, fft_len, signal = get_fast_hankel_representation(time_series, end_index, window_size, rank, lag=lag)
+    return hankel_rfft[:, 0], fft_len, signal
 
 
 ########################################################################################################################
@@ -112,7 +119,7 @@ def compile_hankel_fft(time_series: np.ndarray, end_index: int, window_size: int
 
 def randomized_hankel_svd_fft(hankel_fft: np.ndarray, fft_length: int, k: int, subspace_iteration_q: int,
                               oversampling_p: int, length_windows: int, number_windows: int,
-                              random_state: np.random.RandomState, workers: int):
+                              random_state: np.random.RandomState):
     """
     Function for the randomized singular vector decomposition using [1].
     Implementation modified from: https://pypi.org/project/fbpca/
@@ -124,8 +131,7 @@ def randomized_hankel_svd_fft(hankel_fft: np.ndarray, fft_length: int, k: int, s
 
     # Apply A to a random matrix, obtaining Q.
     random_matrix_omega = random_state.uniform(low=-1, high=1, size=(number_windows, sample_length_l))
-    projection_matrix_q = fast_hankel_matmul(hankel_fft, length_windows, fft_length, random_matrix_omega, lag=1,
-                                             workers=workers)
+    projection_matrix_q = fast_hankel_matmul(hankel_fft, length_windows, fft_length, random_matrix_omega, lag=1)
 
     # Form a matrix Q whose columns constitute a well-conditioned basis for the columns of the earlier Q.
     if subspace_iteration_q == 0:
@@ -138,13 +144,12 @@ def randomized_hankel_svd_fft(hankel_fft: np.ndarray, fft_length: int, k: int, s
 
         # Q = fast_hankel_matmul(Q.T, A).conj().T
         projection_matrix_q = fast_hankel_left_matmul(hankel_fft, number_windows, fft_length,
-                                                      projection_matrix_q.T, lag=1, workers=workers).T
+                                                      projection_matrix_q.T, lag=1).T
 
         (projection_matrix_q, _) = sp.linalg.lu(projection_matrix_q, permute_l=True)
 
         # Q = mult(A, Q)
-        projection_matrix_q = fast_hankel_matmul(hankel_fft, length_windows, fft_length, projection_matrix_q,
-                                                 lag=1, workers=workers)
+        projection_matrix_q = fast_hankel_matmul(hankel_fft, length_windows, fft_length, projection_matrix_q, lag=1)
 
         if it + 1 < subspace_iteration_q:
             (projection_matrix_q, _) = sp.linalg.lu(projection_matrix_q, permute_l=True)
@@ -153,8 +158,7 @@ def randomized_hankel_svd_fft(hankel_fft: np.ndarray, fft_length: int, k: int, s
 
     # SVD Q'*A to obtain approximations to the singular values and right singular vectors of A; adjust the left singular
     # vectors of Q'*A to approximate the left singular vectors of A.
-    lower_space_hankel = fast_hankel_left_matmul(hankel_fft, number_windows, fft_length, projection_matrix_q.T, lag=1,
-                                                 workers=workers)
+    lower_space_hankel = fast_hankel_left_matmul(hankel_fft, number_windows, fft_length, projection_matrix_q.T, lag=1)
     (R, s, Va) = sp.linalg.svd(lower_space_hankel, full_matrices=False)
     U = projection_matrix_q.dot(R)
 
@@ -225,10 +229,10 @@ def rsvd_score_naive(hankel_matrix: np.ndarray, eigvec_future: np.ndarray, k: in
 
 def rsvd_score_fft(hankel_fft: np.ndarray, eigvec_future: np.ndarray, fft_length: int, k: int,
                    subspace_iteration_q: int, oversampling_p: int, length_windows: int, number_windows: int,
-                   random_state: np.random.RandomState, workers: int):
+                   random_state: np.random.RandomState):
     # get the eigenvectors and eigenvalues
     left_eigenvectors, _, _ = randomized_hankel_svd_fft(hankel_fft, fft_length, k, subspace_iteration_q, oversampling_p,
-                                                        length_windows, number_windows, random_state, workers=workers)
+                                                        length_windows, number_windows, random_state)
 
     # make the multiplication
     scores = left_eigenvectors.T @ eigvec_future
@@ -468,7 +472,7 @@ def irlb(hankel_matrix: np.ndarray, nu: int, tol: float = 0.0001, maxit: int = 5
 
 
 def irlb_fft(hankel_fft_matrix: np.ndarray, nu: int, fft_length: int, windows_number: int, windows_length: int,
-             workers: int,  tol: float = 0.0001, maxit: int = 50):
+             tol: float = 0.0001, maxit: int = 50):
     """Estimate a few of the largest singular values and corresponding singular
     vectors of matrix using the implicitly restarted Lanczos bidiagonalization
     method of Baglama and Reichel, see:
@@ -523,8 +527,7 @@ def irlb_fft(hankel_fft_matrix: np.ndarray, nu: int, fft_length: int, windows_nu
             j = k
 
         # W[:, j] = hankel_matrix @ V[:, j] using fft
-        W[:, j] = fast_hankel_matmul(hankel_fft_matrix, windows_length, fft_length, V[:, j], lag=1,
-                                     workers=workers)
+        W[:, j] = fast_hankel_matmul(hankel_fft_matrix, windows_length, fft_length, V[:, j:j+1], lag=1)[:, 0]
 
         mprod += 1
         if it > 0:
@@ -536,8 +539,7 @@ def irlb_fft(hankel_fft_matrix: np.ndarray, nu: int, fft_length: int, windows_nu
         # Lanczos process
         while j < m_b:
             # F = W[:, j] @ hankel_matrix using fft
-            F = fast_hankel_left_matmul(hankel_fft_matrix, windows_number, fft_length, W[:, j], lag=1,
-                                        workers=workers)
+            F = fast_hankel_left_matmul(hankel_fft_matrix, windows_number, fft_length, W[:, j:j+1], lag=1)[:, 0]
             mprod += 1
             F = F - s*V[:, j]
             F = orthogonalize(F, V[:, 0:j+1])
@@ -549,8 +551,7 @@ def irlb_fft(hankel_fft_matrix: np.ndarray, nu: int, fft_length: int, windows_nu
                 B[j, j] = s
                 B[j, j+1] = fn
                 # W[:, j+1] = hankel_matrix @ V[:, j+1] using fft
-                W[:, j + 1] = fast_hankel_matmul(hankel_fft_matrix, windows_length, fft_length, V[:, j+1],
-                                                 lag=1, workers=workers)
+                W[:, j + 1] = fast_hankel_matmul(hankel_fft_matrix, windows_length, fft_length, V[:, j+1:j+2], lag=1)[:, 0]
                 mprod += 1
                 # One step of classical Gram-Schmidt...
                 W[:, j+1] = W[:, j+1] - fn*W[:, j]
@@ -607,14 +608,14 @@ def rayleigh_ritz(hankel_matrix: np.ndarray, eigvec_future: np.ndarray, rank: in
 
 
 def rayleigh_ritz_fft(hankel_fft_matrix: np.ndarray, eigvec_future: np.ndarray, rank: int,
-                      fft_length: int, windows_number: int, windows_length: int, workers: int):
+                      fft_length: int, windows_number: int, windows_length: int):
     """
     This function computes the change point score based on the krylov subspace approximation of the SST as proposed in
     [1].
     """
 
     # compute the singular value decomposition of the hankel matrix
-    left_eigenvectors, *_ = irlb_fft(hankel_fft_matrix, rank, fft_length, windows_number, windows_length, workers,
+    left_eigenvectors, *_ = irlb_fft(hankel_fft_matrix, rank, fft_length, windows_number, windows_length,
                                      np.finfo(float).eps)
 
     # compute the similarity score as defined in the ika sst paper and also return our u for the
@@ -650,7 +651,7 @@ def exact_svd(hankel_matrix: np.ndarray, eigvec_future: np.ndarray, rank: int) -
 
 
 def transform(time_series: np.ndarray, window_length: int, window_number: int, lag: int, end_idx: int,
-              key: str, random_state: np.random.RandomState, workers: int, power_iterations: int = 20) -> float:
+              key: str, random_state: np.random.RandomState, power_iterations: int = 20) -> float:
 
     # check that the time series fits and we did not make an error
     assert len(time_series) >= end_idx, f"Time series is too short ({time_series.shape}) for start: {end_idx}."
@@ -670,15 +671,14 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         # get the first singular matrix vector of future hankel matrix
         x0, _, _ = randomized_hankel_svd_fft(hankel_future, fft_length, k=1, subspace_iteration_q=3,
                                              oversampling_p=14, length_windows=window_length,
-                                             number_windows=window_number, random_state=random_state, workers=workers)
+                                             number_windows=window_number, random_state=random_state)
 
         # compile the past hankel matrix (H1)
         hankel_past, fft_length, _ = compile_hankel_fft(time_series, end_idx - lag, window_length, window_number)
 
         # compute the scoring using the ika naive implementation
         score = rsvd_score_fft(hankel_past, x0, fft_length, k=5, subspace_iteration_q=3, oversampling_p=10,
-                               length_windows=window_length, number_windows=window_number, random_state=random_state,
-                               workers=workers)
+                               length_windows=window_length, number_windows=window_number, random_state=random_state)
 
     elif key == "naive rsvd":
 
@@ -745,13 +745,13 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         hankel_future, fft_length, _ = compile_hankel_fft(time_series, end_idx, window_length, window_number)
 
         # get the first singular matrix vector of future hankel matrix
-        x0, *_ = irlb_fft(hankel_future, 1, fft_length, window_number, window_length, workers=workers)
+        x0, *_ = irlb_fft(hankel_future, 1, fft_length, window_number, window_length)
 
         # compile the past hankel matrix (H1)
         hankel_past, fft_length, _ = compile_hankel_fft(time_series, end_idx - lag, window_length, window_number)
 
         # compute the scoring using the naive irlb
-        score = rayleigh_ritz_fft(hankel_past, x0, 5, fft_length, window_number, window_length, workers=workers)
+        score = rayleigh_ritz_fft(hankel_past, x0, 5, fft_length, window_number, window_length)
     else:
         raise ValueError(f"Key {key} not known.")
 
@@ -792,6 +792,9 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
     chunk_number = signal.shape[0]//chunk_length
     if not chunk_number:
         return results
+
+    # set the numba thread limit
+    numba.set_num_threads(thread_limit)
 
     # limit the threads for the BLAS and numpy multiplications
     with threadpool_limits(limits=thread_limit):
@@ -860,6 +863,9 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
 
     # create the results dict
     results = {col: [] for col in result_keys}
+
+    # set the numba thread limit
+    numba.set_num_threads(thread_limit)
 
     # limit the threads for the BLAS and numpy multiplications
     with threadpool_limits(limits=thread_limit, user_api='blas'):
@@ -936,6 +942,9 @@ def run_comparison():
                "window lengths": [],
                "max. threads": []}
 
+    # trigger the jit compilation of the numba functions for hankel matmul so they are not measured
+    trigger_numba_matmul_jit()
+
     # go through the signals and window sizes and compute the values
     for window_size in window_sizes:
         for signal_key in tqdm(signal_keys, desc=f"Computing for window size {window_size}"):
@@ -971,7 +980,7 @@ def run_comparison():
 def run_simulated_comparison():
 
     # create different window sizes and specify the number of windows
-    window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 5000, num=50))[::-1]]
+    window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 20000, num=50))[::-1]]
 
     # define the threadlimits used
     threadlimits = [1, 2, 4, 6, 8, 10]
@@ -986,6 +995,9 @@ def run_simulated_comparison():
                "random seed": [],
                "window lengths": [],
                "max. threads": []}
+
+    # trigger the jit compilation of the numba functions for hankel matmul so they are not measured
+    trigger_numba_matmul_jit()
 
     # go through the signals and window sizes and compute the values
     for window_size in window_sizes:
