@@ -62,10 +62,7 @@ class ChangeSimulator:
         # check whether both have not been specified make some automated decisions
         if frequency_before is None and frequency_after is None:
             frequency_before = self.random_generator.randint(1, 10)
-            if frequency_before > 5:
-                frequency_after = self.random_generator.randint(1, 5)
-            else:
-                frequency_after = self.random_generator.randint(6, 10)
+            frequency_after = self.random_generator.randint(1, 10)
 
         # update the random change point
         changepoint_position = self.make_random_changepoint()
@@ -96,10 +93,7 @@ class ChangeSimulator:
         # make default definition
         if mean_before is None and mean_after is None:
             mean_before = self.random_generator.randint(0, 100)/100
-            if mean_before > 50:
-                mean_after = self.random_generator.randint(0, 50)/100
-            else:
-                mean_after = self.random_generator.randint(51, 100)/100
+            mean_after = self.random_generator.randint(0, 100)/100
 
         # check that the mean is between 0 and 1
         assert 0 <= mean_before <= 1 and 0 <= mean_after <= 1, "Specified means need to be between 0 and 1."
@@ -126,10 +120,7 @@ class ChangeSimulator:
         # make default definition
         if variance_before is None and variance_after is None:
             variance_before = self.random_generator.randint(1, 100)/100
-            if variance_before > 50:
-                variance_after = self.random_generator.randint(1, 50)/100
-            else:
-                variance_after = self.random_generator.randint(60, 100)/100
+            variance_after = self.random_generator.randint(1, 100)/100
 
         # update the random change point
         changepoint_position = self.make_random_changepoint()
