@@ -1,7 +1,9 @@
 import numpy as np
 import scipy.linalg
 
-from fastHankel import fast_hankel_matmul, fast_hankel_left_matmul, get_fast_hankel_representation
+from fastHankel import fast_numba_hankel_matmul as fast_hankel_matmul
+from fastHankel import fast_numba_hankel_left_matmul as fast_hankel_left_matmul
+from fastHankel import get_fast_hankel_representation
 import changepoint_simulator as cps
 import scipy as sp
 import numba as nb
