@@ -980,7 +980,7 @@ def run_comparison():
 def run_simulated_comparison():
 
     # create different window sizes and specify the number of windows
-    window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 20000, num=50))[::-1]]
+    window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 7000, num=50))[::-1]]
 
     # define the threadlimits used
     threadlimits = [1, 2, 4, 6, 8, 10]
