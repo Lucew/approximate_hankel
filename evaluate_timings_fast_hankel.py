@@ -19,7 +19,7 @@ machine_precision = machine_precision[0]
 # get only the runs with one thread
 threads = df["Thread Count"].unique()
 threads = [np.min(threads), np.max(threads)]
-threads[1] = 6
+threads[1] = 10
 df = df[(df["Thread Count"] == threads[0]) | (df["Thread Count"] == threads[1])]
 
 # define the scaling for the matrices and only keep those values
@@ -42,7 +42,9 @@ df = df[df["Lag"] == lag]
 window_lengths = df["Window Length"].unique()
 window_numbers = df["Window Number"].unique()
 df = df[df["Window Length"] == df["Window Number"]]
+# "FFT Execution Time (over all Runs) Right Product Hankel@Other"
 names = ["Naive Execution Time (over all Runs) Right Product Hankel@Other",
+         "Parallel FFT Execution Time (over all Runs) Right Product Hankel@Other",
          "FFT Execution Time (over all Runs) Right Product Hankel@Other"]
 for name in names:
     for tc in df["Thread Count"].unique():
@@ -50,13 +52,30 @@ for name in names:
         x = df[df["Thread Count"] == tc]["Window Length"]
         y = df[df["Thread Count"] == tc][name]/runs/1_000_000
         plt.plot(x, y, "x-", label=label)
+
+# find the point where the multithreaded matrix multiplication is surpassed by the fft multithreaded
+df = df.sort_values("Window Length")
+
+smaller = np.where(df[df["Thread Count"] == threads[1]][names[0]].values >=
+                   df[df["Thread Count"] == threads[1]][names[1]].values)
+wd = None
+if len(smaller[0]) > 0:
+    idx = np.min(smaller)
+    wd = df[df["Thread Count"] == threads[1]]["Window Length"].values[idx]
+    ymin, ymax = plt.ylim()
+    plt.vlines(wd, ymin, ymax)
+
+# make some plot stuff
 plt.xscale("log")
 plt.yscale("log")
 plt.xlabel("Matrix Dimension N")
 plt.ylabel("Runtime [ms]")
-plt.title(f"Fast NxN Hankel matrix product with Nx{other_dim} random matrix.")
+plt.title(f"Fast NxN Hankel matrix product with Nx{other_dim} random matrix. Parallel FFT Faster at: {wd}.")
 plt.legend()
 plt.show()
 
 # find some values
-print(df[df["Thread Count"] == 6][[names[0], "Window Length"]])
+for col in names:
+    interest = df[df["Thread Count"] == threads[1]][[col, "Window Length"]]
+    interest[col] = interest[col]/runs/1_000_000
+    print(interest)
