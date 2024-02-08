@@ -51,10 +51,16 @@ def fast_hankel_matmul_parallel(hankel_fft: np.ndarray, l_windows, fft_shape: in
 
 
 @numba.njit(parallel=True)
-def fast_hankel_numba(hankel_fft: np.ndarray, l_windows: int, fft_shape: int, other_matrix: np.ndarray, mi=0):
+def fast_hankel_numba(hankel_fft: np.ndarray, l_windows: int, fft_shape: int, other_matrix: np.ndarray, lag: int = 1):
 
     # get the shape of the other matrix
     m, n = other_matrix.shape
+
+    # make fft of x (while padding x with zeros) to make up for the lag
+    if lag > 1:
+        out = np.zeros((lag * m - lag + 1, n), dtype=other_matrix.dtype)
+        out[::lag, :] = other_matrix
+        other_matrix = out
 
     # create the new empty matrix that we will fill with values
     result_buffer = np.empty((l_windows, n))
@@ -109,7 +115,7 @@ def main():
             print(timeit.timeit(lambda: fast_hankel_matmul_parallel(hankel_rfft, l_windows, fft_len, multi, threadpool=pool), number=run_num) / run_num * 1000)
             hankel_rfft2 = hankel_rfft[:, None]
             print(timeit.timeit(lambda: fast_hankel_matmul2(hankel_rfft2, l_windows, fft_len, multi, lag, workers=limit_threads), number=run_num)/run_num*1000)
-
+            print(fast_hankel_numba.parallel_diagnostics(level=4))
             # check whether the results are the same
             # a = fast_hankel_matmul_parallel(hankel_rfft, l_windows, fft_len, multi, threadpool=pool)
             a = fast_hankel_numba(hankel_rfft, l_windows, fft_len, multi)
