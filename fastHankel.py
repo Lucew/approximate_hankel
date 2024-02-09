@@ -298,11 +298,11 @@ def fast_numba_hankel_matmul(hankel_fft: np.ndarray, l_windows: int, fft_shape: 
     for index in numba.prange(n):
 
         # compute the fft of the vector
-        fft_x = sp.fft.rfft(out[:, index], n=fft_shape, workers=1)
+        fft_x = sp.fft.rfft(out[:, index], n=fft_shape)
 
         # multiply the ffts with each other to do the convolution in frequency domain and convert it back
         # and save it into the output buffer
-        result_buffer[:, index] = sp.fft.irfft(hankel_fft*fft_x, n=fft_shape, workers=1)[(m-1)*lag:(m-1)*lag+l_windows]
+        result_buffer[:, index] = sp.fft.irfft(hankel_fft*fft_x, n=fft_shape)[(m-1)*lag:(m-1)*lag+l_windows]
     return result_buffer
 
 
@@ -326,11 +326,11 @@ def fast_numba_hankel_left_matmul(hankel_fft: np.ndarray, n_windows: int, fft_sh
     for index in numba.prange(n):
 
         # compute the fft of the vector
-        fft_x = sp.fft.rfft(other_matrix[:, index], n=fft_shape, workers=1)
+        fft_x = sp.fft.rfft(other_matrix[:, index], n=fft_shape)
 
         # multiply the ffts with each other to do the convolution in frequency domain and convert it back
         # and save it into the output buffer
-        result_buffer[:, index] = sp.fft.irfft(hankel_fft*fft_x, n=fft_shape, workers=1)[(m-1):(m-1)+n_windows*lag:lag]
+        result_buffer[:, index] = sp.fft.irfft(hankel_fft*fft_x, n=fft_shape)[(m-1):(m-1)+n_windows*lag:lag]
     return result_buffer.T
 
 
@@ -727,8 +727,8 @@ def trigger_numba_matmul_jit():
 def main():
     # define some window length
     limit_threads = 12
-    l_windows = 10000
-    n_windows = 10000
+    l_windows = 5000
+    n_windows = 5000
     lag = 1
     run_num = 500
 
