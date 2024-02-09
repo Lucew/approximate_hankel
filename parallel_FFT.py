@@ -80,6 +80,37 @@ def fast_hankel_numba(hankel_fft: np.ndarray, l_windows: int, fft_shape: int, ot
     return result_buffer
 
 
+@numba.njit(parallel=True)
+def fast_hankel_numba2(hankel_fft: np.ndarray, l_windows: int, fft_shape: int, other_matrix: np.ndarray, lag: int = 1):
+
+    # get the shape of the other matrix
+    m, n = other_matrix.shape
+
+    # make fft of x (while padding x with zeros) to make up for the lag
+    if lag > 1:
+        out = np.zeros((lag * m - lag + 1, n), dtype=other_matrix.dtype)
+        out[::lag, :] = other_matrix
+        other_matrix = out
+
+    # flip the other matrix
+    other_matrix = np.flipud(other_matrix)
+
+    # compute the fft of the vector
+    fft_x = spfft.rfft(other_matrix, n=fft_shape, axis=0, workers=6)
+
+    # create the new empty matrix that we will fill with values
+    result_buffer = np.empty((fft_x.shape[0], n), dtype="complex")
+
+    # make a numba parallel loop over the vector of the other matrix (columns)
+    for index in numba.prange(n):
+
+        # multiply the ffts with each other to do the convolution in frequency domain and convert it back
+        # and save it into the output buffer
+        result_buffer[:, index] = hankel_fft*fft_x[:, index]
+    result_buffer = spfft.irfft(result_buffer, n=fft_shape, axis=0, workers=6)[(m - 1): (m - 1) + l_windows, :]
+    return result_buffer
+
+
 def main():
     # define some window length
     limit_threads = 6
@@ -106,16 +137,18 @@ def main():
     # run the jit compilation once
     numba.set_num_threads(limit_threads)
     fast_hankel_numba(hankel_rfft, l_windows, fft_len, multi)
+    fast_hankel_numba2(hankel_rfft, l_windows, fft_len, multi)
 
     # execute the function and measure the time
     with threadpool_limits(limits=limit_threads):
         with concurrent.futures.ThreadPoolExecutor(limit_threads) as pool:
 
             print(timeit.timeit(lambda: fast_hankel_numba(hankel_rfft, l_windows, fft_len, multi), number=run_num)/run_num*1000)
+            print(timeit.timeit(lambda: fast_hankel_numba2(hankel_rfft, l_windows, fft_len, multi), number=run_num) / run_num * 1000)
             print(timeit.timeit(lambda: fast_hankel_matmul_parallel(hankel_rfft, l_windows, fft_len, multi, threadpool=pool), number=run_num) / run_num * 1000)
             hankel_rfft2 = hankel_rfft[:, None]
             print(timeit.timeit(lambda: fast_hankel_matmul2(hankel_rfft2, l_windows, fft_len, multi, lag, workers=limit_threads), number=run_num)/run_num*1000)
-            print(fast_hankel_numba.parallel_diagnostics(level=4))
+            # print(fast_hankel_numba.parallel_diagnostics(level=4))
             # check whether the results are the same
             # a = fast_hankel_matmul_parallel(hankel_rfft, l_windows, fft_len, multi, threadpool=pool)
             a = fast_hankel_numba(hankel_rfft, l_windows, fft_len, multi)
