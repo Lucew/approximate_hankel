@@ -868,7 +868,7 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
     numba.set_num_threads(thread_limit)
 
     # limit the threads for the BLAS and numpy multiplications
-    with threadpool_limits(limits=thread_limit, user_api='blas'):
+    with threadpool_limits(limits=thread_limit):
 
         # create a random state so every function uses the same random state reliably
         # mainly to take care of the future vector generation
@@ -980,7 +980,7 @@ def run_comparison():
 def run_simulated_comparison():
 
     # create different window sizes and specify the number of windows
-    window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 7000, num=50))[::-1]]
+    window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 5000, num=30))[::-1]]
 
     # define the threadlimits used
     threadlimits = [1, 2, 4, 6, 8, 10]
