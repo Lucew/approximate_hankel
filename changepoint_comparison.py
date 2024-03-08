@@ -739,8 +739,8 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         # compute the scoring using the naive irlb
         score = rayleigh_ritz(hankel_past, x0, 5)
 
-    elif key == "fft irlb":
-
+    elif key == "fft irlb":  # TODO Fix the implementation of fft irlb (has errors too high)
+        raise ValueError("FFT IRLB currently not working.")
         # compile the future hankel matrix (H2)
         hankel_future, fft_length, _ = compile_hankel_fft(time_series, end_idx, window_length, window_number)
 
@@ -767,14 +767,15 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
 
 
 def process_signal(signal_key: str, window_length: int, hdf_path: str, result_keys: list[str],
-                   reference: str = "naive svd", thread_limit: int = 4) -> dict[str:(float, float, int)]:
+                   reference: str = "naive svd", thread_limit: int = 6) -> dict[str:(float, float, int)]:
 
     # get the signal into the RAM
     with h5py.File(hdf_path, 'r') as filet:
         signal = filet[signal_key][:]
 
     # specify the keys of the functions we plan to use (and make sure they are unique)
-    function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft irlb", "fft rsvd", "naive ika"]
+    # function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft irlb", "fft rsvd", "naive ika"]
+    function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft rsvd", "naive ika"]
     assert len(set(function_keys)) == len(function_keys), f"Function keys must not contain duplicates."
     assert reference == function_keys[0], f"{reference} has to be the first function key. Specified: {function_keys}."
 
@@ -819,9 +820,12 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
                 # compute the result
                 try:
                     start = time.perf_counter_ns()
-                    score = transform(signal, window_length, window_length, lag, end_idx, key, rnd_state, thread_limit)
+                    score = transform(signal, window_length, window_length, lag, end_idx, key, rnd_state)
                     elapsed = time.perf_counter_ns() - start
                 except np.linalg.LinAlgError:
+                    print(f"There is something wrong with signal {signal_key} in chunk {chx}.")
+                    break
+                except ValueError:
                     print(f"There is something wrong with signal {signal_key} in chunk {chx}.")
                     break
 
@@ -854,10 +858,10 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
 
 
 def process_simulated_signal(window_length: int, result_keys: list[str], reference: str = "naive svd",
-                             thread_limit: int = 4) -> dict[str:(float, float, int)]:
+                             thread_limit: int = 6) -> dict[str:(float, float, int)]:
 
     # specify the keys of the functions we plan to use (and make sure they are unique)
-    function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft irlb", "fft rsvd", "naive ika"]
+    function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft rsvd", "naive ika"]
     assert len(set(function_keys)) == len(function_keys), f"Function keys must not contain duplicates."
     assert reference == function_keys[0], f"{reference} has to be the first function key. Specified: {function_keys}."
 
@@ -891,7 +895,7 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
 
                 # compute the result
                 start = time.perf_counter_ns()
-                score = transform(signal, window_length, window_length, lag, sig_length, key, rnd_state, thread_limit)
+                score = transform(signal, window_length, window_length, lag, sig_length, key, rnd_state)
                 elapsed = time.perf_counter_ns() - start
 
                 # check whether we have computed the reference value
@@ -924,7 +928,7 @@ def run_comparison():
 
     # create different window sizes and specify the number of windows
     window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 2000, num=100))[::-1]]
-    window_sizes = [size for size in window_sizes if size < 316]
+    window_sizes = [ele for ele in window_sizes if ele < 307]
 
     # get the signal keys from the hdf5 file
     hdf_path = "UCRArchive_2018.hdf5"
