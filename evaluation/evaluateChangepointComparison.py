@@ -31,7 +31,7 @@ def load_files(path="results", simulated=True):
 def main():
 
     # load the data into memory
-    data = load_files()
+    data = load_files(simulated=True)
 
     # get the method names
     methods = data["method"].unique()
@@ -52,12 +52,31 @@ def main():
         for wl in window_sizes:
             computation_times["method"].append(method)
             computation_times["window size N"].append(wl)
-            computation_times["computation time [ms]"].append(data[(data['method'] == method) & (data["window lengths"] == wl) & (data["max. threads"] == 4)]["time"].mean()/1_000_000)
+            computation_times["computation time [ms]"].append(data[(data['method'] == method) & (data["window lengths"] == wl) & (data["max. threads"] == 6)]["time"].mean(skipna=True)/1_000_000)
 
     # make into a dataframe and plot
     plt.rcParams['text.usetex'] = True
     computation_times = pd.DataFrame(computation_times)
+
+    # Plot the computation times
     plot = sns.lineplot(data=computation_times, x="window size N", y="computation time [ms]", hue="method")
+
+    # group the methods after the window sizes
+    grouped = computation_times.groupby("window size N")
+    first_overtake = float('inf')
+    for window_size, group in grouped:
+        resi = group.loc[group["computation time [ms]"].idxmin(), 'method']
+        if resi == "fft rsvd":
+            first_overtake = min(first_overtake, window_size)
+
+    # Plot vertical lines where one method becomes faster than the other
+    plt.axvline(x=first_overtake, color='black', linestyle='--', linewidth=1)
+    plt.text(first_overtake, plt.gca().get_ylim()[1], f'{first_overtake}', rotation=90, verticalalignment='bottom')
+
+    # Set labels and title
+    plt.xlabel("Window size N")
+    plt.ylabel("Computation time [ms]")
+    plt.title("Computation Time Comparison")
     plot.set(yscale="log")
 
     complexity = {"naive svd": "O($N^{3}$)", "naive rsvd": "O($N^{2}$)", "fft rsvd": "O($N*logN$)", "naive ika": "O($N^{3}$)" , "naive irlb": "O($N^{2}$)"}
@@ -78,11 +97,11 @@ def main():
 
     # check the scalability of the methods per number of threads
     thread_numbers = data["max. threads"].unique()
+    print(window_sizes)
     if len(thread_numbers) > 1:
 
         # find the maximum window size that we ran
-        wl = max(window_sizes)
-        wl = window_sizes[-2]
+        wl = sorted(window_sizes)[-7]
         print(wl)
 
         # go over the methods and window sizes and compute the average computation time
@@ -93,7 +112,7 @@ def main():
             cmp_val = data[(data['method'] == method) &
                            (data["window lengths"] == wl) & (data["max. threads"] == 1)]["time"].mean() / 1_000_000
             cmp_val2 = data[(data['method'] == method) &
-                           (data["window lengths"] == wl) & (data["max. threads"] == 10)]["time"].mean() / 1_000_000
+                            (data["window lengths"] == wl) & (data["max. threads"] == 10)]["time"].mean() / 1_000_000
             print(cmp_val, cmp_val2)
             for thr in thread_numbers:
                 computation_times["method"].append(method)
