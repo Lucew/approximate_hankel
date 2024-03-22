@@ -5,7 +5,12 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import numba as nb
-import torch
+try:
+    import torch
+    is_torch_available = True
+except ModuleNotFoundError:
+    is_torch_available = False
+
 from threadpoolctl import threadpool_limits
 import os
 import concurrent.futures
@@ -439,6 +444,8 @@ def fast_convolve_hankel_matmul(hankel_signal: np.ndarray, other_matrix: np.ndar
 
 
 def fast_torch_hankel_matmul(hankel_repr: torch.Tensor, other_matrix: torch.Tensor, lag: int):
+    if not is_torch_available:
+        raise ImportError("Torch not available")
     with torch.no_grad():
         if lag > 1:
             m, b, n = other_matrix.shape

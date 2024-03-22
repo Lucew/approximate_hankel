@@ -5,7 +5,11 @@ from threadpoolctl import threadpool_limits
 import numpy as np
 import numba as nb
 import timeit
-import torch
+try:
+    import torch
+    is_torch_available = True
+except ModuleNotFoundError:
+    is_torch_available = False
 import concurrent.futures
 
 
@@ -209,11 +213,12 @@ def test_matmul():
     hankel = fh.compile_hankel_parallel(ts, end_idx, l_windows, n_windows, lag)
 
     # use the torch function
-    torch_sig = torch.from_numpy(signal)
-    torch_sig = torch_sig[None, None, :]
-    torch_mat = torch.from_numpy(multi)
-    torch_mat = torch_mat[:, None, :]
-    torch_mat = torch_mat.transpose(0, 2)
+    if is_torch_available:
+        torch_sig = torch.from_numpy(signal)
+        torch_sig = torch_sig[None, None, :]
+        torch_mat = torch.from_numpy(multi)
+        torch_mat = torch_mat[:, None, :]
+        torch_mat = torch_mat.transpose(0, 2)
 
     # create the threadpool executor for the parallel execution
     pool = concurrent.futures.ThreadPoolExecutor(limit_threads)
@@ -229,9 +234,9 @@ def test_matmul():
 
     results.append(probe_fast_numba_hankel_matmul(hankel_rfft[:, 0], l_windows, fft_len, hankel, multi, lag,'Parallel numba Matmul working?'))
     results.append(probe_fast_numba_hankel_left_matmul(hankel_rfft[:, 0], n_windows, fft_len, hankel, multi2, lag,'Parallel numba Left Matmul working?'))
-
-    results.append(probe_fast_torch_hankel_matmul(torch_sig, hankel, multi, torch_mat, lag, 'Matmul torch working?'))
-    results.append(probe_fast_convolve_hankel_matmul(signal, hankel, multi, lag, 'Matmul convolve working?'))
+    if is_torch_available:
+        results.append(probe_fast_torch_hankel_matmul(torch_sig, hankel, multi, torch_mat, lag, 'Matmul torch working?'))
+        results.append(probe_fast_convolve_hankel_matmul(signal, hankel, multi, lag, 'Matmul convolve working?'))
 
     results.append(probe_fast_fftconvolve_hankel_matmul(signal, hankel, multi, lag, 'Matmul fftconvolve working?'))
     results.append(probe_fast_fftconvolve_hankel_left_matmul(signal, hankel, multi2, lag, 'Left Matmul fftconvolve working?'))
@@ -266,8 +271,9 @@ def test_matmul():
         print("Times for FFTconv:")
         print(timeit.timeit(lambda: fh.fast_fftconv_hankel_matmul(signal, multi, lag, workers=limit_threads), number=run_num) / run_num * 1000)
         print(timeit.timeit(lambda: fh.fast_fftconv_hankel_left_matmul(signal, multi2, lag, workers=limit_threads), number=run_num) / run_num * 1000)
-        # print(timeit.timeit(lambda: fh.fast_torch_hankel_matmul(torch_sig, torch_mat, lag), number=run_num) / run_num * 1000)
-        # print(timeit.timeit(lambda: fh.fast_convolve_hankel_matmul(signal, multi, lag), number=run_num) / run_num * 1000)
+        # if is_torch_available:
+            # print(timeit.timeit(lambda: fh.fast_torch_hankel_matmul(torch_sig, torch_mat, lag), number=run_num) / run_num * 1000)
+            # print(timeit.timeit(lambda: fh.fast_convolve_hankel_matmul(signal, multi, lag), number=run_num) / run_num * 1000)
 
         print("Times for Naive:")
         print(timeit.timeit(lambda: fh.normal_hankel_matmul(hankel, multi), number=run_num)/run_num*1000)
@@ -279,5 +285,5 @@ def test_matmul():
 
 
 if __name__ == "__main__":
-    test_parallelization()
     test_matmul()
+    test_parallelization()
