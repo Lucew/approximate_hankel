@@ -11,16 +11,13 @@ import argparse
 import numba
 
 # hankel matmul functions
-from fastHankel import fast_numba_hankel_matmul as fast_hankel_matmul
-from fastHankel import fast_numba_hankel_left_matmul as fast_hankel_left_matmul
-from fastHankel import get_fast_hankel_representation
-from fastHankel import trigger_numba_matmul_jit
+from utils.fastHankel import fast_numba_hankel_matmul as fast_hankel_matmul
+from utils.fastHankel import fast_numba_hankel_left_matmul as fast_hankel_left_matmul
+from utils.fastHankel import get_fast_hankel_representation
+from utils.fastHankel import trigger_numba_matmul_jit
 
 # simulations of signals
-import changepoint_simulator as cps
-
-
-
+from preprocessing import changepoint_simulator as cps
 
 """
 Academic Sources:
@@ -77,7 +74,7 @@ def power_method(a_matrix: np.ndarray, x_vector: np.ndarray, n_iterations: int) 
 ########################################################################################################################
 @nb.njit()
 def compile_hankel_naive(time_series: np.ndarray, end_index: int, window_size: int, rank: int,
-                         lag: int = 1) -> np.ndarray:
+                         lag: int = 1, safe: bool = False) -> np.ndarray:
     """
     This function constructs a hankel matrix from a 1D time series. Please make sure constructing the matrix with
     the given parameters (end index, window size, etc.) is possible, as this function does no checks due to
@@ -88,6 +85,7 @@ def compile_hankel_naive(time_series: np.ndarray, end_index: int, window_size: i
     :param window_size: the size of the windows cut from the time series
     :param rank: the amount of time series in the matrix
     :param lag: the lag between the time series of the different columns
+    :param safe: whether we should check the construction (slow)
     :return: The hankel matrix with lag one
     """
 
@@ -96,14 +94,64 @@ def compile_hankel_naive(time_series: np.ndarray, end_index: int, window_size: i
     # almost no faster way:
     # https://stackoverflow.com/questions/71410927/vectorized-way-to-construct-a-block-hankel-matrix-in-numpy-or-scipy
     hankel = np.empty((window_size, rank))
-    hankel.fill(np.NAN)
+    if safe:
+        hankel.fill(np.NAN)
 
     # go through the time series and make the hankel matrix
     for cx in range(rank):
         hankel[:, -cx-1] = time_series[(end_index-window_size-cx*lag):(end_index-cx*lag)]
 
     # check that we did not make a mistake
-    assert np.all(~np.isnan(hankel)), "Something is off, there are still NAN in the numpy array."
+    if safe:
+        assert np.all(~np.isnan(hankel)), "Something is off, there are still NAN in the numpy array."
+    return hankel
+
+
+@nb.njit(parallel=True)
+def compile_hankel_parallel(time_series: np.ndarray, end_index: int, window_size: int, rank: int,
+                            lag: int = 1, safe: bool = False) -> np.ndarray:
+    """
+    This function constructs a hankel matrix from a 1D time series. Please make sure constructing the matrix with
+    the given parameters (end index, window size, etc.) is possible, as this function does no checks due to
+    performance reasons.
+
+    :param time_series: 1D array with float values as the time series
+    :param end_index: the index (point in time) where the time series starts
+    :param window_size: the size of the windows cut from the time series
+    :param rank: the amount of time series in the matrix
+    :param lag: the lag between the time series of the different columns
+    :param safe: whether we should check the construction (slow)
+    :return: The hankel matrix with lag one
+    """
+
+    # make an empty matrix to place the values
+    #
+    # almost no faster way:
+    # https://stackoverflow.com/questions/71410927/vectorized-way-to-construct-a-block-hankel-matrix-in-numpy-or-scipy
+    hankel = np.empty((window_size, rank))
+    if safe:
+        hankel.fill(np.NAN)
+
+    # go through the off-diagonals of the hankel matrix in parallel
+    sig_start = end_index-window_size-rank+1
+    for dx in nb.prange(window_size+rank-1):
+
+        # get the corresponding value from the time series
+        val = time_series[sig_start+dx]
+
+        # get starting indices of the diagonal
+        rx = int(min(dx, window_size - 1))
+        cx = int(max(0, dx - window_size + 1))
+
+        # set all the values on the off diagonals of the hankel matrix
+        for _ in range(min(rx, rank-cx-1)+1):
+            hankel[rx, cx] = val
+            rx -= 1
+            cx += 1
+
+    # check that we did not make a mistake
+    if safe:
+        assert np.all(~np.isnan(hankel)), "Something is off, there are still NAN in the numpy array."
     return hankel
 
 
@@ -683,7 +731,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
     elif key == "naive rsvd":
 
         # compile the future hankel matrix (H2)
-        hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
+        hankel_future = compile_hankel_parallel(time_series, end_idx, window_length, window_number)
 
         # get the first singular vector of the future hankel matrix
         x0, _, _ = randomized_hankel_svd_naive(hankel_future, k=1, subspace_iteration_q=3, oversampling_p=14,
@@ -691,7 +739,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
                                                random_state=random_state)
 
         # compile the past hankel matrix (H1)
-        hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
+        hankel_past = compile_hankel_parallel(time_series, end_idx - lag, window_length, window_number)
 
         # compute the scoring using the ika naive implementation
         score = rsvd_score_naive(hankel_past, x0, k=5, subspace_iteration_q=3, oversampling_p=10,
@@ -700,13 +748,13 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
     elif key == "naive ika":
 
         # compile the future hankel matrix (H2)
-        hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
+        hankel_future = compile_hankel_parallel(time_series, end_idx, window_length, window_number)
 
         # make the power iterations
         _, x0 = power_method(hankel_future, x0, power_iterations)
 
         # compile the past hankel matrix (H1) and compute outer product C as in the paper
-        hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
+        hankel_past = compile_hankel_parallel(time_series, end_idx - lag, window_length, window_number)
         hankel_past = hankel_past @ hankel_past.T
 
         # compute the scoring using the ika naive implementation
@@ -714,27 +762,27 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
     elif key == "naive svd":
 
         # compile the future hankel matrix (H2)
-        hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
+        hankel_future = compile_hankel_parallel(time_series, end_idx, window_length, window_number)
 
         # get the largest eigenvalue from decomposition
         x0, _, _ = np.linalg.svd(hankel_future, full_matrices=False)
         x0 = x0[:, 0]
 
         # compile the past hankel matrix (H1)
-        hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
+        hankel_past = compile_hankel_parallel(time_series, end_idx - lag, window_length, window_number)
 
         # compute the scoring using the ika naive implementation
         score = exact_svd(hankel_past, x0, 5)
     elif key == "naive irlb":
 
         # compile the future hankel matrix (H2)
-        hankel_future = compile_hankel_naive(time_series, end_idx, window_length, window_number)
+        hankel_future = compile_hankel_parallel(time_series, end_idx, window_length, window_number)
 
         # get the largest eigenvalue from decomposition
         x0, *_ = irlb(hankel_future, 1)
 
         # compile the past hankel matrix (H1)
-        hankel_past = compile_hankel_naive(time_series, end_idx - lag, window_length, window_number)
+        hankel_past = compile_hankel_parallel(time_series, end_idx - lag, window_length, window_number)
 
         # compute the scoring using the naive irlb
         score = rayleigh_ritz(hankel_past, x0, 5)
