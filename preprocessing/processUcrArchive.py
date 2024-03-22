@@ -25,7 +25,7 @@ def read_csv(path: str, expected_signals: int) -> list[(int, np.ndarray)]:
     # as they would hint for faulty parsing or faulty signals
     arrays = [array[idx, :] for idx in range(array.shape[0])]
     inclusion = []
-    with open('excluded_signals_missing_values.txt', 'a') as filet:
+    with open('../excluded_signals_missing_values.txt', 'a') as filet:
         for idx, array in enumerate(arrays):
 
             # check our assumption that the array is no 1d
@@ -67,7 +67,7 @@ def create_hdf_file(path: str) -> None:
     files = find_files(path)
 
     # load the info csv for all the files
-    info_csv = pd.read_csv("DataSummary.csv", index_col=2)
+    info_csv = pd.read_csv("../DataSummary.csv", index_col=2)
     info_csv.columns = [col.strip() for col in info_csv.columns]
     available_signals = info_csv["Test"].sum() + info_csv["Train"].sum()
     print(f'We have {available_signals} signals in the dataset.')
@@ -96,7 +96,7 @@ def create_hdf_file(path: str) -> None:
 
 
 def main():
-    create_hdf_file(os.path.join('..', '..', 'Data', 'UCRArchive_2018'))
+    create_hdf_file(os.path.join('../..', '..', 'Data', 'UCRArchive_2018'))
 
 
 if __name__ == '__main__':

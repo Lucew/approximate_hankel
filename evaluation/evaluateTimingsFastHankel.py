@@ -7,7 +7,7 @@ plt.rcParams['figure.figsize'] = (16, 9)
 
 # read the information into memory
 # df = pd.read_csv("Results_HankelMult_i9-109080XE.csv", index_col=0)
-df = pd.read_csv("Results_HankelMult_i9-109080XE.csv", index_col=0)
+df = pd.read_csv("../Results_HankelMult_i9-109080XE.csv", index_col=0)
 
 # define the scaling for the matrices and only keep those values
 scaling = 1
