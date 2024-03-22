@@ -15,6 +15,7 @@ from utils.fastHankel import fast_numba_hankel_matmul as fast_hankel_matmul
 from utils.fastHankel import fast_numba_hankel_left_matmul as fast_hankel_left_matmul
 from utils.fastHankel import get_fast_hankel_representation
 from utils.fastHankel import trigger_numba_matmul_jit
+from utils.fastHankel import compile_hankel_parallel
 
 # simulations of signals
 from preprocessing import changepoint_simulator as cps
@@ -72,88 +73,6 @@ def power_method(a_matrix: np.ndarray, x_vector: np.ndarray, n_iterations: int) 
 ########################################################################################################################
 # -------------------------------- HANKEL REPRESENTATIONS ------------------------------------------------------------ #
 ########################################################################################################################
-@nb.njit()
-def compile_hankel_naive(time_series: np.ndarray, end_index: int, window_size: int, rank: int,
-                         lag: int = 1, safe: bool = False) -> np.ndarray:
-    """
-    This function constructs a hankel matrix from a 1D time series. Please make sure constructing the matrix with
-    the given parameters (end index, window size, etc.) is possible, as this function does no checks due to
-    performance reasons.
-
-    :param time_series: 1D array with float values as the time series
-    :param end_index: the index (point in time) where the time series starts
-    :param window_size: the size of the windows cut from the time series
-    :param rank: the amount of time series in the matrix
-    :param lag: the lag between the time series of the different columns
-    :param safe: whether we should check the construction (slow)
-    :return: The hankel matrix with lag one
-    """
-
-    # make an empty matrix to place the values
-    #
-    # almost no faster way:
-    # https://stackoverflow.com/questions/71410927/vectorized-way-to-construct-a-block-hankel-matrix-in-numpy-or-scipy
-    hankel = np.empty((window_size, rank))
-    if safe:
-        hankel.fill(np.NAN)
-
-    # go through the time series and make the hankel matrix
-    for cx in range(rank):
-        hankel[:, -cx-1] = time_series[(end_index-window_size-cx*lag):(end_index-cx*lag)]
-
-    # check that we did not make a mistake
-    if safe:
-        assert np.all(~np.isnan(hankel)), "Something is off, there are still NAN in the numpy array."
-    return hankel
-
-
-@nb.njit(parallel=True)
-def compile_hankel_parallel(time_series: np.ndarray, end_index: int, window_size: int, rank: int,
-                            lag: int = 1, safe: bool = False) -> np.ndarray:
-    """
-    This function constructs a hankel matrix from a 1D time series. Please make sure constructing the matrix with
-    the given parameters (end index, window size, etc.) is possible, as this function does no checks due to
-    performance reasons.
-
-    :param time_series: 1D array with float values as the time series
-    :param end_index: the index (point in time) where the time series starts
-    :param window_size: the size of the windows cut from the time series
-    :param rank: the amount of time series in the matrix
-    :param lag: the lag between the time series of the different columns
-    :param safe: whether we should check the construction (slow)
-    :return: The hankel matrix with lag one
-    """
-
-    # make an empty matrix to place the values
-    #
-    # almost no faster way:
-    # https://stackoverflow.com/questions/71410927/vectorized-way-to-construct-a-block-hankel-matrix-in-numpy-or-scipy
-    hankel = np.empty((window_size, rank))
-    if safe:
-        hankel.fill(np.NAN)
-
-    # go through the off-diagonals of the hankel matrix in parallel
-    sig_start = end_index-window_size-rank+1
-    for dx in nb.prange(window_size+rank-1):
-
-        # get the corresponding value from the time series
-        val = time_series[sig_start+dx]
-
-        # get starting indices of the diagonal
-        rx = int(min(dx, window_size - 1))
-        cx = int(max(0, dx - window_size + 1))
-
-        # set all the values on the off diagonals of the hankel matrix
-        for _ in range(min(rx, rank-cx-1)+1):
-            hankel[rx, cx] = val
-            rx -= 1
-            cx += 1
-
-    # check that we did not make a mistake
-    if safe:
-        assert np.all(~np.isnan(hankel)), "Something is off, there are still NAN in the numpy array."
-    return hankel
-
 
 def compile_hankel_fft(time_series: np.ndarray, end_index: int, window_size: int, rank: int,
                        lag: int = 1) -> (np.ndarray, int, np.ndarray):

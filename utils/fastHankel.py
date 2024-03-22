@@ -9,10 +9,11 @@ import torch
 from threadpoolctl import threadpool_limits
 import os
 import concurrent.futures
-import numba
 
 
-def compile_hankel(time_series: np.ndarray, end_index: int, window_size: int, rank: int, lag: int = 1) -> np.ndarray:
+@nb.njit()
+def compile_hankel_naive(time_series: np.ndarray, end_index: int, window_size: int, rank: int,
+                         lag: int = 1, safe: bool = False) -> np.ndarray:
     """
     This function constructs a hankel matrix from a 1D time series. Please make sure constructing the matrix with
     the given parameters (end index, window size, etc.) is possible, as this function does no checks due to
@@ -23,6 +24,7 @@ def compile_hankel(time_series: np.ndarray, end_index: int, window_size: int, ra
     :param window_size: the size of the windows cut from the time series
     :param rank: the amount of time series in the matrix
     :param lag: the lag between the time series of the different columns
+    :param safe: whether we should check the construction (slow)
     :return: The hankel matrix with lag one
     """
 
@@ -31,10 +33,64 @@ def compile_hankel(time_series: np.ndarray, end_index: int, window_size: int, ra
     # almost no faster way:
     # https://stackoverflow.com/questions/71410927/vectorized-way-to-construct-a-block-hankel-matrix-in-numpy-or-scipy
     hankel = np.empty((window_size, rank))
+    if safe:
+        hankel.fill(np.NAN)
 
     # go through the time series and make the hankel matrix
     for cx in range(rank):
         hankel[:, -cx-1] = time_series[(end_index-window_size-cx*lag):(end_index-cx*lag)]
+
+    # check that we did not make a mistake
+    if safe:
+        assert np.all(~np.isnan(hankel)), "Something is off, there are still NAN in the numpy array."
+    return hankel
+
+
+@nb.njit(parallel=True)
+def compile_hankel_parallel(time_series: np.ndarray, end_index: int, window_size: int, rank: int,
+                            lag: int = 1, safe: bool = False) -> np.ndarray:
+    """
+    This function constructs a hankel matrix from a 1D time series. Please make sure constructing the matrix with
+    the given parameters (end index, window size, etc.) is possible, as this function does no checks due to
+    performance reasons.
+
+    :param time_series: 1D array with float values as the time series
+    :param end_index: the index (point in time) where the time series starts
+    :param window_size: the size of the windows cut from the time series
+    :param rank: the amount of time series in the matrix
+    :param lag: the lag between the time series of the different columns
+    :param safe: whether we should check the construction (slow)
+    :return: The hankel matrix with lag one
+    """
+
+    # make an empty matrix to place the values
+    #
+    # almost no faster way:
+    # https://stackoverflow.com/questions/71410927/vectorized-way-to-construct-a-block-hankel-matrix-in-numpy-or-scipy
+    hankel = np.empty((window_size, rank))
+    if safe:
+        hankel.fill(np.NAN)
+
+    # go through the off-diagonals of the hankel matrix in parallel
+    sig_start = end_index-window_size-rank+1
+    for dx in nb.prange(window_size+rank-1):
+
+        # get the corresponding value from the time series
+        val = time_series[sig_start+dx]
+
+        # get starting indices of the diagonal
+        rx = int(min(dx, window_size - 1))
+        cx = int(max(0, dx - window_size + 1))
+
+        # set all the values on the off diagonals of the hankel matrix
+        for _ in range(min(rx, rank-cx-1)+1):
+            hankel[rx, cx] = val
+            rx -= 1
+            cx += 1
+
+    # check that we did not make a mistake
+    if safe:
+        assert np.all(~np.isnan(hankel)), "Something is off, there are still NAN in the numpy array."
     return hankel
 
 
@@ -274,7 +330,7 @@ def fast_parallel_hankel_left_matmul(hankel_fft: np.ndarray, n_windows, fft_shap
     return result_buffer.T
 
 
-@numba.njit(parallel=True)
+@nb.njit(parallel=True)
 def fast_numba_hankel_matmul(hankel_fft: np.ndarray, l_windows: int, fft_shape: int, other_matrix: np.ndarray,
                              lag: int):
 
@@ -295,7 +351,7 @@ def fast_numba_hankel_matmul(hankel_fft: np.ndarray, l_windows: int, fft_shape: 
     out = np.flipud(out)
 
     # make a numba parallel loop over the vector of the other matrix (columns)
-    for index in numba.prange(n):
+    for index in nb.prange(n):
 
         # compute the fft of the vector
         fft_x = sp.fft.rfft(out[:, index], n=fft_shape)
@@ -306,7 +362,7 @@ def fast_numba_hankel_matmul(hankel_fft: np.ndarray, l_windows: int, fft_shape: 
     return result_buffer
 
 
-@numba.njit(parallel=True)
+@nb.njit(parallel=True)
 def fast_numba_hankel_left_matmul(hankel_fft: np.ndarray, n_windows: int, fft_shape: int, other_matrix: np.ndarray,
                                   lag: int):
 
@@ -323,7 +379,7 @@ def fast_numba_hankel_left_matmul(hankel_fft: np.ndarray, n_windows: int, fft_sh
     other_matrix = np.flipud(other_matrix)
 
     # make a numba parallel loop over the vector of the other matrix (columns)
-    for index in numba.prange(n):
+    for index in nb.prange(n):
 
         # compute the fft of the vector
         fft_x = sp.fft.rfft(other_matrix[:, index], n=fft_shape)
@@ -418,136 +474,6 @@ def normal_hankel_inner(hankel):
     return hankel.T @ hankel
 
 
-def evaluate_closeness(m1: np.ndarray, m2: np.ndarray, comment: str):
-    absdiff = np.abs(m1-m2)
-    assert m1.dtype == m2.dtype, f"Matrices need to have similar datatypes m1 has: {m1.dtype}, m2 has {m2.dtype}"
-    return {"Comment": comment,
-            "Is Close": np.allclose(m1, m2),
-            "Max. Diff.": np.max(absdiff),
-            "Median Diff.": np.median(absdiff),
-            "Std. Diff.": np.std(absdiff),
-            "Machine Precision": np.finfo(m1.dtype).eps}
-
-
-def print_table(my_tuples: list[dict]):
-    """
-    Pretty print a list of dictionaries (my_dict) as a dynamically sized table.
-    """
-
-    # get the column list and check whether it is available in all dicts
-    col_keys = [key for key in my_tuples[0].keys()]
-    cols = {key: [f"{key}"] for key in col_keys}
-    for idx, tupled in enumerate(my_tuples):
-
-        # check whether they are available
-        assert all(ele in tupled for ele in col_keys), (f"Tuple {idx} does not have the expected cols: {col_keys},"
-                                                        f" it has: {list(tupled.keys())}")
-
-        # insert the tuples into the columns
-        for key, val in cols.items():
-            val.append(f"{tupled[key]}")
-
-    # check the column width for each column
-    col_width = []
-    for key in col_keys:
-        col_width.append((key, max(map(len, cols[key]))))
-
-    # print the stuff
-    # formatting = "|" + "|".join(f"{{{idx}: <{width}" for idx, (_, width) in enumerate(col_width))
-    header = "|".join(key.center(width+5) for key, width in col_width)
-    print(header)
-    print("-"*len(header))
-    for tupled in my_tuples:
-        text = "|".join(f"{tupled[key]}".ljust(width+5) for key, width in col_width)
-        print(text)
-
-
-def probe_hankel_fft_from_matrix(time_series, window_length: int, window_number: int, comment: str):
-
-    # get the final index of the time series
-    end_idx = window_length + window_number - 1
-
-    # get the hankel matrix
-    hankel_matrix = compile_hankel(time_series, end_idx, window_length, window_number, lag=1)
-
-    # get the fft representation from the matrix
-    hankel_fft1, fft_len1, _ = hankel_fft_from_matrix(hankel_matrix)
-
-    # get the fft representation directly from the signal
-    hankel_fft2, fft_len2, _ = get_fast_hankel_representation(time_series, end_idx, window_length, window_number, lag=1)
-    assert fft_len1 == fft_len2, "FFT length are different...."
-    return evaluate_closeness(hankel_fft1, hankel_fft2, comment)
-
-
-def probe_fast_hankel_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag, comment: str):
-    way_one = fast_hankel_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag)
-    way_two = normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
-
-
-def probe_fast_hankel_left_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag, comment: str):
-    way_one = fast_hankel_left_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag)
-    way_two = normal_hankel_left_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
-
-
-def probe_fast_parallel_hankel_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag, threadpool,
-                                      comment: str):
-    way_one = fast_parallel_hankel_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag, threadpool)
-    way_two = normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
-
-
-def probe_fast_parallel_hankel_left_matmul(hankel_repr, n_windows, fft_len, hankel_matrix, other_matrix, lag,
-                                           threadpool, comment: str):
-    way_one = fast_parallel_hankel_left_matmul(hankel_repr, n_windows, fft_len, other_matrix, lag, threadpool)
-    way_two = normal_hankel_left_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
-
-
-def probe_fast_numba_hankel_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag, comment: str):
-    way_one = fast_numba_hankel_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag)
-    way_two = normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
-
-
-def probe_fast_numba_hankel_left_matmul(hankel_repr, n_windows, fft_len, hankel_matrix, other_matrix, lag,
-                                        comment: str):
-    way_one = fast_numba_hankel_left_matmul(hankel_repr, n_windows, fft_len, other_matrix, lag)
-    way_two = normal_hankel_left_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
-
-
-def probe_fast_convolve_hankel_matmul(hankel_repr, hankel_matrix, other_matrix, lag, comment: str):
-    way_one = fast_convolve_hankel_matmul(hankel_repr, other_matrix, lag)
-    way_two = normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
-
-
-def probe_fast_fftconvolve_hankel_matmul(hankel_repr, hankel_matrix, other_matrix, lag, comment: str):
-    way_one = fast_fftconv_hankel_matmul(hankel_repr, other_matrix, lag)
-    way_two = normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
-
-
-def probe_fast_fftconvolve_hankel_left_matmul(hankel_repr, hankel_matrix, other_matrix, lag, comment: str):
-    way_one = fast_fftconv_hankel_left_matmul(hankel_repr, other_matrix, lag)
-    way_two = normal_hankel_left_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
-
-
-def probe_fast_torch_hankel_matmul(hankel_fft, hankel_matrix, other_matrix, other_matrix_torch, lag, comment: str):
-    way_one = fast_torch_hankel_matmul(hankel_fft, other_matrix_torch, lag)
-    way_two = normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
-
-
-def probe_fast_hankel_inner_product(hankel_repr, hankel_matrix, l_windows, n_windows, lag, comment: str):
-    way_one = fast_hankel_inner(hankel_repr, l_windows, n_windows, lag)
-    way_two = normal_hankel_inner(hankel_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
-
-
 def run_measurements(thread_counts: list[int],
                      window_lengths: list[int],
                      window_numbers: list[int],
@@ -599,7 +525,7 @@ def run_measurements(thread_counts: list[int],
     for (wl, wn, sc, om, omsc, lag, tc) in tqdm(tuple_generator, "Compute all the tuples"):
 
         # limit the threads used by numba
-        numba.set_num_threads(tc)
+        nb.set_num_threads(tc)
 
         # this limits the threads for numpy (at least for our version)
         with threadpool_limits(limits=tc):
@@ -622,7 +548,7 @@ def run_measurements(thread_counts: list[int],
 
             # create the matrix representation
             hankel_rfft, fft_len, signal = get_fast_hankel_representation(signal, end_idx, wl, wn, lag)
-            hankel = compile_hankel(signal, end_idx, wl, wn, lag)
+            hankel = compile_hankel_parallel(signal, end_idx, wl, wn, lag)
 
             # measure the time to get the matrix representation
             repr_time = timeit.timeit(lambda: get_fast_hankel_representation(signal, end_idx, wl, wn, lag),
@@ -719,110 +645,12 @@ def trigger_numba_matmul_jit():
     hankel_rfft, fft_len, signal = get_fast_hankel_representation(ts, end_idx, l_windows, n_windows, 1)
 
     # trigger the jit compilations
-    numba.set_num_threads(limit_threads)
+    nb.set_num_threads(limit_threads)
     fast_numba_hankel_left_matmul(hankel_rfft[:, 0], n_windows, fft_len, multi, 1)
     fast_numba_hankel_matmul(hankel_rfft[:, 0], l_windows, fft_len, multi, 1)
 
 
-def main():
-    # define some window length
-    limit_threads = 12
-    l_windows = 5000
-    n_windows = 5000
-    lag = 1
-    run_num = 500
-
-    # create a time series of a certain length
-    n = 300000
-    # ts = np.random.uniform(size=(n,))*1000
-    ts = np.linspace(0, n, n+1)
-
-    # create a matrix to multiply by
-    k = 15
-    multi = np.random.uniform(size=(n_windows, k))
-
-    multi2 = np.random.uniform(size=(k, l_windows))
-
-    # get the final index of the time series
-    end_idx = l_windows + lag * (n_windows - 1)
-
-    # get both hankel representations
-    hankel_rfft, fft_len, signal = get_fast_hankel_representation(ts, end_idx, l_windows, n_windows, lag)
-    hankel = compile_hankel(ts, end_idx, l_windows, n_windows, lag)
-
-    # use the torch function
-    torch_sig = torch.from_numpy(signal)
-    torch_sig = torch_sig[None, None, :]
-    torch_mat = torch.from_numpy(multi)
-    torch_mat = torch_mat[:, None, :]
-    torch_mat = torch_mat.transpose(0, 2)
-
-    # create the threadpool executor for the parallel execution
-    pool = concurrent.futures.ThreadPoolExecutor(limit_threads)
-    numba.set_num_threads(limit_threads)
-
-    # test the faster multiplication
-    results = list()
-    results.append(probe_fast_hankel_matmul(hankel_rfft, l_windows, fft_len, hankel, multi, lag, 'Matmul working?'))
-    results.append(probe_fast_hankel_left_matmul(hankel_rfft, n_windows, fft_len, hankel, multi2, lag, 'Left Matmul working?'))
-
-    results.append(probe_fast_parallel_hankel_matmul(hankel_rfft, l_windows, fft_len, hankel, multi, lag, pool, 'Parallel Matmul working?'))
-    results.append(probe_fast_parallel_hankel_left_matmul(hankel_rfft, n_windows, fft_len, hankel, multi2, lag, pool, 'Parallel Left Matmul working?'))
-
-    results.append(probe_fast_numba_hankel_matmul(hankel_rfft[:, 0], l_windows, fft_len, hankel, multi, lag,'Parallel numba Matmul working?'))
-    results.append(probe_fast_numba_hankel_left_matmul(hankel_rfft[:, 0], n_windows, fft_len, hankel, multi2, lag,'Parallel numba Left Matmul working?'))
-
-    results.append(probe_fast_torch_hankel_matmul(torch_sig, hankel, multi, torch_mat, lag, 'Matmul torch working?'))
-    results.append(probe_fast_convolve_hankel_matmul(signal, hankel, multi, lag, 'Matmul convolve working?'))
-
-    results.append(probe_fast_fftconvolve_hankel_matmul(signal, hankel, multi, lag, 'Matmul fftconvolve working?'))
-    results.append(probe_fast_fftconvolve_hankel_left_matmul(signal, hankel, multi2, lag, 'Left Matmul fftconvolve working?'))
-
-    results.append(probe_hankel_fft_from_matrix(signal, l_windows, n_windows, "FFT representation from Hankel matrix?"))
-    # results.append(probe_fast_hankel_inner_product(signal, hankel, l_windows, n_windows, lag, 'Inner product working?'))
-    print_table(results)
-
-    # check for execution time of both approaches
-    print()
-    header = f"Measure some times for {run_num} repetitions using {limit_threads} threads and hankel of size {l_windows}*{n_windows}"
-    print(header)
-    print("-"*len(header))
-    with threadpool_limits(limits=limit_threads):
-
-        print("Times for rfft signal:")
-        rfft_time = timeit.timeit(lambda: get_fast_hankel_representation(ts, end_idx, l_windows, n_windows, lag), number=run_num) / run_num * 1000
-        print(rfft_time)
-
-        print("Times for Own:")
-        print(timeit.timeit(lambda: fast_hankel_matmul(hankel_rfft, l_windows, fft_len, multi, lag, workers=limit_threads), number=run_num)/run_num*1000+rfft_time)
-        print(timeit.timeit(lambda: fast_hankel_left_matmul(hankel_rfft, n_windows, fft_len, multi2, lag, workers=limit_threads), number=run_num) / run_num * 1000+rfft_time)
-
-        print("Times for Own parallel:")
-        print(timeit.timeit(lambda: fast_parallel_hankel_matmul(hankel_rfft, l_windows, fft_len, multi, lag, threadpool=pool), number=run_num) / run_num * 1000 + rfft_time)
-        print(timeit.timeit(lambda: fast_parallel_hankel_left_matmul(hankel_rfft, n_windows, fft_len, multi2, lag, threadpool=pool), number=run_num) / run_num * 1000 + rfft_time)
-
-        print("Times for numba parallel:")
-        print(timeit.timeit(lambda: fast_numba_hankel_matmul(hankel_rfft[:, 0], l_windows, fft_len, multi, lag), number=run_num) / run_num * 1000 + rfft_time)
-        print(timeit.timeit(lambda: fast_numba_hankel_left_matmul(hankel_rfft[:, 0], n_windows, fft_len, multi2, lag), number=run_num) / run_num * 1000 + rfft_time)
-
-        print("Times for FFTconv:")
-        print(timeit.timeit(lambda: fast_fftconv_hankel_matmul(signal, multi, lag, workers=limit_threads), number=run_num) / run_num * 1000)
-        print(timeit.timeit(lambda: fast_fftconv_hankel_left_matmul(signal, multi2, lag, workers=limit_threads), number=run_num) / run_num * 1000)
-        # print(timeit.timeit(lambda: fast_torch_hankel_matmul(torch_sig, torch_mat, lag), number=run_num) / run_num * 1000)
-        # print(timeit.timeit(lambda: fast_convolve_hankel_matmul(signal, multi, lag), number=run_num) / run_num * 1000)
-
-        print("Times for Naive:")
-        print(timeit.timeit(lambda: normal_hankel_matmul(hankel, multi), number=run_num)/run_num*1000)
-        print(timeit.timeit(lambda: normal_hankel_left_matmul(hankel, multi2), number=run_num) / run_num * 1000)
-
-        print("Times for Naive inner Product:")
-        # print(timeit.timeit(lambda: normal_hankel_inner(hankel), number=run_num) / run_num * 1000)
-        # print(timeit.timeit(lambda: fast_hankel_inner(signal, l_windows, n_windows, lag), number=run_num) / run_num * 1000)
-
-
 if __name__ == "__main__":
-    main()
-    """
     run_measurements(thread_counts=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
                      window_lengths=list(np.geomspace(10, 20_000, num=30, dtype=int))[::-1],
                      window_numbers=list(np.geomspace(10, 20_000, num=30, dtype=int))[::-1],
@@ -831,4 +659,3 @@ if __name__ == "__main__":
                      other_matrix_scaling=[1],
                      lags=[1],
                      runs=50)
-    """
