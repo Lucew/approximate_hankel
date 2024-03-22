@@ -188,6 +188,7 @@ fabric.properties
 # the result folder
 result/
 intermediate_results/
+results/
 
 # any hdf5 files
 *.hdf5
