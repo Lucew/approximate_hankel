@@ -6,7 +6,6 @@ tqdm
 matplotlib
 pyarrow
 pandas
-pytorch
 threadpoolctl
 numba
 
