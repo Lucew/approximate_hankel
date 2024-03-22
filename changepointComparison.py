@@ -618,7 +618,7 @@ def exact_svd(hankel_matrix: np.ndarray, eigvec_future: np.ndarray, rank: int) -
 
 
 def transform(time_series: np.ndarray, window_length: int, window_number: int, lag: int, end_idx: int,
-              key: str, random_state: np.random.RandomState, power_iterations: int = 20) -> float:
+              key: str, random_state: np.random.RandomState, power_iterations: int = 10) -> float:
 
     # check that the time series fits and we did not make an error
     assert len(time_series) >= end_idx, f"Time series is too short ({time_series.shape}) for start: {end_idx}."
