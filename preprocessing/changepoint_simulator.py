@@ -4,7 +4,7 @@ import numpy as np
 class ChangeSimulator:
 
     def __init__(self, length: int, change_point_position: int, random_generator: np.random.RandomState,
-                 random_changepoint = True):
+                 random_changepoint: bool = True):
 
         # save the necessary information into the object
         self.length = length
