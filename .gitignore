@@ -189,6 +189,7 @@ fabric.properties
 result/
 intermediate_results/
 results/
+*.parquet
 
 # any hdf5 files
 *.hdf5
