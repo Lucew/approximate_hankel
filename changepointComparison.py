@@ -618,7 +618,7 @@ def exact_svd(hankel_matrix: np.ndarray, eigvec_future: np.ndarray, rank: int) -
 
 
 def transform(time_series: np.ndarray, window_length: int, window_number: int, lag: int, end_idx: int,
-              key: str, random_state: np.random.RandomState, power_iterations: int = 10) -> float:
+              key: str, random_state: np.random.RandomState, power_iterations: int = 10) -> (float, int, int):
 
     # check that the time series fits and we did not make an error
     assert len(time_series) >= end_idx, f"Time series is too short ({time_series.shape}) for start: {end_idx}."
@@ -630,102 +630,153 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
     # add small noise to the data so the ika sst does not break
     time_series += random_state.normal(scale=1e-4)
 
+    # make a variable that measures hankel time
+    hankel_construction_time = 0
+    decomposition_time = 0
     if key == "fft rsvd":
 
         # compile the future hankel matrix (H2)
+        start = time.perf_counter_ns()
         hankel_future, fft_length, _ = compile_hankel_fft(time_series, end_idx, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # get the first singular matrix vector of future hankel matrix
+        start = time.perf_counter_ns()
         x0, _, _ = randomized_hankel_svd_fft(hankel_future, fft_length, k=1, subspace_iteration_q=3,
                                              oversampling_p=14, length_windows=window_length,
                                              number_windows=window_number, random_state=random_state)
+        decomposition_time += time.perf_counter_ns() - start
 
         # compile the past hankel matrix (H1)
+        start = time.perf_counter_ns()
         hankel_past, fft_length, _ = compile_hankel_fft(time_series, end_idx - lag, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # compute the scoring using the ika naive implementation
+        start = time.perf_counter_ns()
         score = rsvd_score_fft(hankel_past, x0, fft_length, k=5, subspace_iteration_q=3, oversampling_p=10,
                                length_windows=window_length, number_windows=window_number, random_state=random_state)
+        decomposition_time += time.perf_counter_ns() - start
 
     elif key == "naive rsvd":
 
         # compile the future hankel matrix (H2)
+        start = time.perf_counter_ns()
         hankel_future = compile_hankel_parallel(time_series, end_idx, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # get the first singular vector of the future hankel matrix
+        start = time.perf_counter_ns()
         x0, _, _ = randomized_hankel_svd_naive(hankel_future, k=1, subspace_iteration_q=3, oversampling_p=14,
                                                length_windows=window_length, number_windows=window_number,
                                                random_state=random_state)
+        decomposition_time += time.perf_counter_ns() - start
 
         # compile the past hankel matrix (H1)
+        start = time.perf_counter_ns()
         hankel_past = compile_hankel_parallel(time_series, end_idx - lag, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # compute the scoring using the ika naive implementation
+        start = time.perf_counter_ns()
         score = rsvd_score_naive(hankel_past, x0, k=5, subspace_iteration_q=3, oversampling_p=10,
                                  length_windows=window_length, number_windows=window_number, random_state=random_state)
+        decomposition_time += time.perf_counter_ns() - start
 
     elif key == "naive ika":
 
         # compile the future hankel matrix (H2)
+        start = time.perf_counter_ns()
         hankel_future = compile_hankel_parallel(time_series, end_idx, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # make the power iterations
+        start = time.perf_counter_ns()
         _, x0 = power_method(hankel_future, x0, power_iterations)
+        decomposition_time += time.perf_counter_ns() - start
 
         # compile the past hankel matrix (H1) and compute outer product C as in the paper
+        start = time.perf_counter_ns()
         hankel_past = compile_hankel_parallel(time_series, end_idx - lag, window_length, window_number)
         hankel_past = hankel_past @ hankel_past.T
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # compute the scoring using the ika naive implementation
+        start = time.perf_counter_ns()
         score = implicit_krylov_approximation_naive(hankel_past, x0, 5, 9)
+        decomposition_time += time.perf_counter_ns() - start
     elif key == "naive svd":
 
         # compile the future hankel matrix (H2)
+        start = time.perf_counter_ns()
         hankel_future = compile_hankel_parallel(time_series, end_idx, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # get the largest eigenvalue from decomposition
+        start = time.perf_counter_ns()
         x0, _, _ = np.linalg.svd(hankel_future, full_matrices=False)
         x0 = x0[:, 0]
+        decomposition_time += time.perf_counter_ns() - start
 
         # compile the past hankel matrix (H1)
+        start = time.perf_counter_ns()
         hankel_past = compile_hankel_parallel(time_series, end_idx - lag, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # compute the scoring using the ika naive implementation
+        start = time.perf_counter_ns()
         score = exact_svd(hankel_past, x0, 5)
+        decomposition_time += time.perf_counter_ns() - start
     elif key == "naive irlb":
 
         # compile the future hankel matrix (H2)
+        start = time.perf_counter_ns()
         hankel_future = compile_hankel_parallel(time_series, end_idx, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # get the largest eigenvalue from decomposition
+        start = time.perf_counter_ns()
         x0, *_ = irlb(hankel_future, 1)
+        decomposition_time += time.perf_counter_ns() - start
 
         # compile the past hankel matrix (H1)
+        start = time.perf_counter_ns()
         hankel_past = compile_hankel_parallel(time_series, end_idx - lag, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # compute the scoring using the naive irlb
+        start = time.perf_counter_ns()
         score = rayleigh_ritz(hankel_past, x0, 5)
+        decomposition_time += time.perf_counter_ns() - start
 
     elif key == "fft irlb":  # TODO Fix the implementation of fft irlb (has errors too high)
         raise ValueError("FFT IRLB currently not working.")
         # compile the future hankel matrix (H2)
+        start = time.perf_counter_ns()
         hankel_future, fft_length, _ = compile_hankel_fft(time_series, end_idx, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # get the first singular matrix vector of future hankel matrix
+        start = time.perf_counter_ns()
         x0, *_ = irlb_fft(hankel_future, 1, fft_length, window_number, window_length)
+        decomposition_time += time.perf_counter_ns() - start
 
         # compile the past hankel matrix (H1)
+        start = time.perf_counter_ns()
         hankel_past, fft_length, _ = compile_hankel_fft(time_series, end_idx - lag, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
 
         # compute the scoring using the naive irlb
+        start = time.perf_counter_ns()
         score = rayleigh_ritz_fft(hankel_past, x0, 5, fft_length, window_number, window_length)
+        decomposition_time += time.perf_counter_ns() - start
     else:
         raise ValueError(f"Key {key} not known.")
 
     # check the score for negativity (which is not possible)
     if score <= 0-np.finfo(float).eps*1000:
         print(f"Score is negative {score} for method {key}.")
-    return score
+    return score, decomposition_time, hankel_construction_time
 
 
 ########################################################################################################################
@@ -786,9 +837,8 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
 
                 # compute the result
                 try:
-                    start = time.perf_counter_ns()
-                    score = transform(signal, window_length, window_length, lag, end_idx, key, rnd_state)
-                    elapsed = time.perf_counter_ns() - start
+                    score, decomposition_time, hankel_time = transform(signal, window_length, window_length, lag,
+                                                                       end_idx, key, rnd_state)
                 except np.linalg.LinAlgError:
                     print(f"There is something wrong with signal {signal_key} in chunk {chx}.")
                     break
@@ -813,7 +863,8 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
                 results["method"].append(key)
                 results["score"].append(score)
                 results["true-score"].append(cmp_val-score)
-                results["time"].append(elapsed)
+                results["decomposition time"].append(decomposition_time)
+                results["hankel construction time"].append(hankel_time)
                 results["cmp val"].append(cmp_val)
                 results["random seed"].append(seed)
                 results["window lengths"].append(window_length)
@@ -861,9 +912,8 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
             for key in function_keys:
 
                 # compute the result
-                start = time.perf_counter_ns()
-                score = transform(signal, window_length, window_length, lag, sig_length, key, rnd_state)
-                elapsed = time.perf_counter_ns() - start
+                score, decomposition_time, hankel_time = transform(signal, window_length, window_length, lag,
+                                                                   sig_length, key, rnd_state)
 
                 # check whether we have computed the reference value
                 if key == reference:
@@ -880,7 +930,8 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
                 results["method"].append(key)
                 results["score"].append(score)
                 results["true-score"].append(cmp_val-score)
-                results["time"].append(elapsed)
+                results["decomposition time"].append(decomposition_time)
+                results["hankel construction time"].append(hankel_time)
                 results["cmp val"].append(cmp_val)
                 results["random seed"].append(seed)
                 results["window lengths"].append(window_length)
@@ -907,7 +958,8 @@ def run_comparison():
                "method": [],
                "score": [],
                "true-score": [],
-               "time": [],
+               "decomposition time": [],
+               "hankel construction time": [],
                "cmp val": [],
                "random seed": [],
                "window lengths": [],
@@ -937,7 +989,7 @@ def run_comparison():
         for method in methods:
             tmp_df = df[df['method'] == method]
             mape = tmp_df['true-score'].abs().mean()
-            elapsed = tmp_df["time"].mean()
+            elapsed = tmp_df["decomposition time"].mean() + tmp_df["hankel construction time"].mean()
             print(f"Method {method:<15} error: {mape:0.10f} time: {elapsed/1_000_000:0.5f}.")
 
         # save it under the window size and clear the results
@@ -961,7 +1013,8 @@ def run_simulated_comparison():
                "method": [],
                "score": [],
                "true-score": [],
-               "time": [],
+               "decomposition time": [],
+               "hankel construction time": [],
                "cmp val": [],
                "random seed": [],
                "window lengths": [],
@@ -992,7 +1045,7 @@ def run_simulated_comparison():
         for method in methods:
             tmp_df = df[df['method'] == method]
             mape = tmp_df['true-score'].abs().mean()
-            elapsed = tmp_df["time"].mean()
+            elapsed = tmp_df["decomposition time"].mean() + tmp_df["hankel construction time"].mean()
             print(f"Method {method:<15} error: {mape:0.10f} time: {elapsed/1_000_000:0.5f}.")
 
         # save it under the window size and clear the results

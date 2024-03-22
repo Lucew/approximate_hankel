@@ -663,6 +663,10 @@ def trigger_numba_matmul_jit():
     # get hankel representations
     hankel_rfft, fft_len, signal = get_fast_hankel_representation(ts, end_idx, l_windows, n_windows, 1)
 
+    # trigger jit compilation for the hankel creation
+    _ = compile_hankel_parallel(ts, end_idx, l_windows, n_windows)
+    _ = compile_hankel_naive(ts, end_idx, l_windows, n_windows)
+
     # trigger the jit compilations
     nb.set_num_threads(limit_threads)
     fast_numba_hankel_left_matmul(hankel_rfft[:, 0], n_windows, fft_len, multi, 1)
