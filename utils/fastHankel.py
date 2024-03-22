@@ -443,7 +443,8 @@ def fast_convolve_hankel_matmul(hankel_signal: np.ndarray, other_matrix: np.ndar
     return result
 
 
-def fast_torch_hankel_matmul(hankel_repr: torch.Tensor, other_matrix: torch.Tensor, lag: int):
+# normal type annotations do not work with conditional imports!
+def fast_torch_hankel_matmul(hankel_repr: "torch.Tensor", other_matrix: "torch.Tensor", lag: int):
     if not is_torch_available:
         raise ImportError("Torch not available")
     with torch.no_grad():
