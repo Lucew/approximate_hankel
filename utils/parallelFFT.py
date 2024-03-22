@@ -2,6 +2,12 @@
 This file contains only some internal code that has been used to compare, time and optimize some functions before
 usage.
 """
+# make sure we find all files
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+# import methods of interest
 import rocket_fft
 import scipy.fft as spfft
 import numpy as np

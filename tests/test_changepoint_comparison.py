@@ -1,3 +1,9 @@
+# make sure to find all files
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+# import methods of interest
 import utils.fastHankel as fh
 from changepointComparison import transform
 from preprocessing.changepoint_simulator import ChangeSimulator
