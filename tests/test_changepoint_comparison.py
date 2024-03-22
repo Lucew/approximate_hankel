@@ -19,17 +19,6 @@ except ModuleNotFoundError:
 import concurrent.futures
 
 
-def evaluate_closeness(m1: np.ndarray, m2: np.ndarray, comment: str):
-    absdiff = np.abs(m1-m2)
-    assert m1.dtype == m2.dtype, f"Matrices need to have similar datatypes m1 has: {m1.dtype}, m2 has {m2.dtype}"
-    return {"Comment": comment,
-            "Is Close": np.allclose(m1, m2),
-            "Max. Diff.": np.max(absdiff),
-            "Median Diff.": np.median(absdiff),
-            "Std. Diff.": np.std(absdiff),
-            "Machine Precision": np.finfo(m1.dtype).eps}
-
-
 def print_table(my_tuples: list[dict]):
     """
     Pretty print a list of dictionaries (my_dict) as a dynamically sized table.
@@ -78,76 +67,76 @@ def probe_hankel_fft_from_matrix(time_series, window_length: int, window_number:
     hankel_fft2, fft_len2, _ = fh.get_fast_hankel_representation(time_series, end_idx, window_length, window_number,
                                                                  lag=1)
     assert fft_len1 == fft_len2, "FFT length are different...."
-    return evaluate_closeness(hankel_fft1, hankel_fft2, comment)
+    return fh.evaluate_closeness(hankel_fft1, hankel_fft2, comment)
 
 
 def probe_fast_hankel_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag, comment: str):
     way_one = fh.fast_hankel_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag)
     way_two = fh.normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
+    return fh.evaluate_closeness(way_one, way_two, comment)
 
 
 def probe_fast_hankel_left_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag, comment: str):
     way_one = fh.fast_hankel_left_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag)
     way_two = fh.normal_hankel_left_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
+    return fh.evaluate_closeness(way_one, way_two, comment)
 
 
 def probe_fast_parallel_hankel_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag, threadpool,
                                       comment: str):
     way_one = fh.fast_parallel_hankel_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag, threadpool)
     way_two = fh.normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
+    return fh.evaluate_closeness(way_one, way_two, comment)
 
 
 def probe_fast_parallel_hankel_left_matmul(hankel_repr, n_windows, fft_len, hankel_matrix, other_matrix, lag,
                                            threadpool, comment: str):
     way_one = fh.fast_parallel_hankel_left_matmul(hankel_repr, n_windows, fft_len, other_matrix, lag, threadpool)
     way_two = fh.normal_hankel_left_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
+    return fh.evaluate_closeness(way_one, way_two, comment)
 
 
 def probe_fast_numba_hankel_matmul(hankel_repr, l_windows, fft_len, hankel_matrix, other_matrix, lag, comment: str):
     way_one = fh.fast_numba_hankel_matmul(hankel_repr, l_windows, fft_len, other_matrix, lag)
     way_two = fh.normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
+    return fh.evaluate_closeness(way_one, way_two, comment)
 
 
 def probe_fast_numba_hankel_left_matmul(hankel_repr, n_windows, fft_len, hankel_matrix, other_matrix, lag,
                                         comment: str):
     way_one = fh.fast_numba_hankel_left_matmul(hankel_repr, n_windows, fft_len, other_matrix, lag)
     way_two = fh.normal_hankel_left_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
+    return fh.evaluate_closeness(way_one, way_two, comment)
 
 
 def probe_fast_convolve_hankel_matmul(hankel_repr, hankel_matrix, other_matrix, lag, comment: str):
     way_one = fh.fast_convolve_hankel_matmul(hankel_repr, other_matrix, lag)
     way_two = fh.normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
+    return fh.evaluate_closeness(way_one, way_two, comment)
 
 
 def probe_fast_fftconvolve_hankel_matmul(hankel_repr, hankel_matrix, other_matrix, lag, comment: str):
     way_one = fh.fast_fftconv_hankel_matmul(hankel_repr, other_matrix, lag)
     way_two = fh.normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
+    return fh.evaluate_closeness(way_one, way_two, comment)
 
 
 def probe_fast_fftconvolve_hankel_left_matmul(hankel_repr, hankel_matrix, other_matrix, lag, comment: str):
     way_one = fh.fast_fftconv_hankel_left_matmul(hankel_repr, other_matrix, lag)
     way_two = fh.normal_hankel_left_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
+    return fh.evaluate_closeness(way_one, way_two, comment)
 
 
 def probe_fast_torch_hankel_matmul(hankel_fft, hankel_matrix, other_matrix, other_matrix_torch, lag, comment: str):
     way_one = fh.fast_torch_hankel_matmul(hankel_fft, other_matrix_torch, lag)
     way_two = fh.normal_hankel_matmul(hankel_matrix, other_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
+    return fh.evaluate_closeness(way_one, way_two, comment)
 
 
 def probe_fast_hankel_inner_product(hankel_repr, hankel_matrix, l_windows, n_windows, lag, comment: str):
     way_one = fh.fast_hankel_inner(hankel_repr, l_windows, n_windows, lag)
     way_two = fh.normal_hankel_inner(hankel_matrix)
-    return evaluate_closeness(way_one, way_two, comment)
+    return fh.evaluate_closeness(way_one, way_two, comment)
 
 
 def test_parallelization():

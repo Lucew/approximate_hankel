@@ -16,6 +16,17 @@ import os
 import concurrent.futures
 
 
+def evaluate_closeness(m1: np.ndarray, m2: np.ndarray, comment: str):
+    absdiff = np.abs(m1-m2)
+    assert m1.dtype == m2.dtype, f"Matrices need to have similar datatypes m1 has: {m1.dtype}, m2 has {m2.dtype}"
+    return {"Comment": comment,
+            "Is Close": np.allclose(m1, m2),
+            "Max. Diff.": np.max(absdiff),
+            "Median Diff.": np.median(absdiff),
+            "Std. Diff.": np.std(absdiff),
+            "Machine Precision": np.finfo(m1.dtype).eps}
+
+
 @nb.njit()
 def compile_hankel_naive(time_series: np.ndarray, end_index: int, window_size: int, rank: int,
                          lag: int = 1, safe: bool = False) -> np.ndarray:
