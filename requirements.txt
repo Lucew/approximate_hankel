@@ -12,3 +12,9 @@ numba
 # things that we need for numba fft parallelization
 rocket-fft
 tbb
+
+# with conda use the following two steps for installation
+# using only conda is not possible as not all packages are listed for conda
+#
+# conda install h5py numpy scipy tqdm matplotlib pyarrow pandas threadpoolctl numba
+# pip install fbpca rocket-fft
