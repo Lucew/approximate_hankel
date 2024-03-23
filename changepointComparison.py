@@ -815,7 +815,8 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
     # set the numba thread limit
     numba.set_num_threads(thread_limit)
 
-    # limit the threads for the BLAS and numpy multiplications
+    # limit the threads for the BLAS and numpy multiplications as well as for numba
+    nb.set_num_threads(thread_limit)
     with threadpool_limits(limits=thread_limit):
 
         # go over the chunks and compute the svd and save the result of the svd
@@ -889,7 +890,8 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
     # set the numba thread limit
     numba.set_num_threads(thread_limit)
 
-    # limit the threads for the BLAS and numpy multiplications
+    # limit the threads for the BLAS and numpy multiplications as well as for numba
+    nb.set_num_threads(thread_limit)
     with threadpool_limits(limits=thread_limit):
 
         # create a random state so every function uses the same random state reliably
