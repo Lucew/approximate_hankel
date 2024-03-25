@@ -9,6 +9,7 @@ from threadpoolctl import threadpool_limits
 from utils.fastHankel import compile_hankel_parallel
 from changepointComparison import randomized_hankel_svd_naive, randomized_hankel_svd_fft, compile_hankel_fft
 from preprocessing.changepoint_simulator import ChangeSimulator
+import argparse
 
 
 def process_signal(signal: tuple[str, np.ndarray, int], window_length: int, signal_length: int,
@@ -32,6 +33,7 @@ def process_signal(signal: tuple[str, np.ndarray, int], window_length: int, sign
 
         # compute the complete decomposition of the matrix
         left_eigenvectors, svd_vals, right_eigenvectors = np.linalg.svd(hankel, full_matrices=False)
+        summed = sum(svd_vals)
 
         # make the svd values
         svd_values = []
@@ -66,7 +68,7 @@ def process_signal(signal: tuple[str, np.ndarray, int], window_length: int, sign
                                                                                     random_state)
             diff = hankel - np.dot(left_eigenvectors[:, :idx] * vals[:idx], right_eigenvectors[:idx, :])
             rsvd_fft_results.append((f'reconstruction rsvd fft q={q}, p={p}, rank={rank}', np.linalg.norm(diff)))
-    return name, seed, svd_values, svd_error, rsvd_naive_results, rsvd_fft_results
+    return name, seed, svd_values, svd_error, summed, rsvd_naive_results, rsvd_fft_results
 
 
 def real_decomposition():
@@ -97,21 +99,38 @@ def real_decomposition():
 
 
 # create a signal generator
-def signal_generator(repetitions: int, signal_length: int):
-    for idx in range(repetitions):
-        # make a new signal generator
-        seed = np.random.randint(1, 10_000_000)
-        rnd_state = np.random.RandomState(seed)
-        sig_gen = ChangeSimulator(signal_length, signal_length // 2, rnd_state)
-        for name, signal in sig_gen.yield_signals():
-            yield name, signal, seed
+def signal_generator(repetitions: int, signal_length: int, simulation=True):
+
+    if simulation:
+        for idx in range(repetitions):
+            # make a new signal generator
+            seed = np.random.randint(1, 10_000_000)
+            rnd_state = np.random.RandomState(seed)
+            sig_gen = ChangeSimulator(signal_length, signal_length // 2, rnd_state)
+            for name, signal in sig_gen.yield_signals():
+                yield name, signal, seed
 
 
-def simulated_decomposition():
+def signal_loader(signal_information: list[tuple[str, int]], signal_length: int):
+    with h5py.File('UCRArchive_2018.hdf5') as filet:
+        for signal_name, segments in signal_information:
+            sig = filet[signal_name]
+            for segment in range(segments):
+                yield f'{signal_name}_{segment*signal_length}', sig[segment*signal_length:(segment+1)*signal_length], 0
+
+
+def get_signal_length(window_size: int):
+    return 2 * window_size - 1
+
+def run_decomposition(simulation=True):
 
     # create different window sizes and specify the number of windows
-    window_sizes = [100, 200, 1000, 5000]
-    window_sizes = window_sizes[::-1]
+    if simulation:
+        window_sizes = [100, 200, 1000, 5000]
+        window_sizes = window_sizes[::-1]
+    else:
+        window_sizes = [100, 200, 500, 1000]
+        window_sizes = window_sizes[::-1]
 
     # define some parameters
     eigenvalues = 20
@@ -119,8 +138,29 @@ def simulated_decomposition():
     oversampling_constants = [0, 2, 5]
     signal_number = 500
 
+    # if we do the comparison for the real signals we need to figure out which signals have the correct
+    # length for our simulations
+    usable_signals = {wl: [] for wl in window_sizes}
+    if not simulation:
+        with h5py.File('UCRArchive_2018.hdf5') as filet:
+
+            # get all the signal keys from the hdf5 file
+            signals = list(filet.keys())
+
+            # go through the signals and check whether they can be used
+            for sig in tqdm(signals, desc='Find all usable signals from file'):
+
+                # get the signal data from the file
+                sig_data = filet[sig]
+
+                # go through the window lengths
+                for wl in window_sizes:
+                    wg = get_signal_length(wl)
+                    if sig_data.shape[0] > wg:
+                        usable_signals[wl].append((sig, sig_data.shape[0]//wg))
+
     # make a results dict
-    results = {'signal identifier': [], 'seed': []}
+    results = {'signal identifier': [], 'seed': [], 'eigenvalue sum': []}
 
     # make all the names for the eigenvalues
     for idx in range(eigenvalues):
@@ -142,7 +182,7 @@ def simulated_decomposition():
     for window_size in window_sizes:
 
         # compute the end index of the signal
-        sig_length = 2 * window_size - 1
+        sig_length = get_signal_length(window_size)
 
         # create the function with a function handle
         function_handle = partial(process_signal,
@@ -153,31 +193,40 @@ def simulated_decomposition():
                                   subspace_iterations=subspace_iterations,
                                   oversampling_constants=oversampling_constants)
 
-        # define the number of signals and the signal generator
-        seed = np.random.randint(1, 10_000_000)
-        rnd_state = np.random.RandomState(seed)
-        sig_gen = ChangeSimulator(sig_length, sig_length//2, rnd_state)
+        # estimate the cardinality
+        if simulation:
+            # define the number of signals and the signal generator
+            seed = np.random.randint(1, 10_000_000)
+            rnd_state = np.random.RandomState(seed)
+            sig_gen = ChangeSimulator(sig_length, sig_length // 2, rnd_state)
 
-        # check how many different signals the signal generator makes
-        different_signals = [ele for ele in sig_gen.yield_signals()]
-        number_simulations = len(different_signals)
-        # function_handle(('test', different_signals[0][1], seed))
+            # check how many different signals the signal generator makes
+            different_signals = [ele for ele in sig_gen.yield_signals()]
+            number_simulations = len(different_signals)
+            card = number_simulations * signal_number
+
+        else:
+            card = sum(ele[1] for ele in usable_signals[window_size])
 
         # create the signal generator
-        sig_gen = signal_generator(signal_number, sig_length)
+        if simulation:
+            sig_gen = signal_generator(signal_number, sig_length, simulation)
+        else:
+            sig_gen = signal_loader(usable_signals[window_size], sig_length)
 
         # make the description
         desc = f'Decompositions for Window Size {window_size}'
-        with mp.Pool(mp.cpu_count()//2) as pp:
+        with mp.Pool(mp.cpu_count()) as pp:
             for result in tqdm(pp.imap_unordered(function_handle, sig_gen, chunksize=10), desc=desc,
-                               total=signal_number*number_simulations):
+                               total=card):
 
                 # unpack the result
-                name, seed, svd_vals, svd_error, rsvd_naive_results, rsvd_fft_results = result
+                name, seed, svd_vals, svd_error, eigensum, rsvd_naive_results, rsvd_fft_results = result
 
                 # save the result into the dict
                 results['signal identifier'].append(name)
                 results['seed'].append(seed)
+                results['eigenvalue sum'].append(eigensum)
                 for name, val in svd_vals:
                     results[name].append(val)
                 for name, val in svd_error:
@@ -201,12 +250,28 @@ def simulated_decomposition():
             print(f"{col}: {df[col].mean()}")
 
         # save it under the window size and clear the results
-        df.to_csv(f"Decomposition_Results_WindowSize_{window_size}.csv")
+        df.to_csv(f"Decomposition_simulated_Results_WindowSize_{window_size}.csv")
 
         # clear the lists
         for value in results.values():
             value.clear()
 
 
+def boolean_string(s):
+    s = s.lower()
+    if s not in {'false', 'true'}:
+        raise ValueError('Not a valid boolean string')
+    return s == 'true'
+
+
 if __name__ == "__main__":
-    simulated_decomposition()
+    parser = argparse.ArgumentParser(description='Changepoint algorithms speed and accuracy comparison.')
+    parser.add_argument('-sim', '--simulated', type=boolean_string, default=True,
+                        help='Specifies whether to use simulated or real signals.')
+    args = parser.parse_args()
+    if args.simulated:
+        print("Running comparison on simulated signals.")
+        run_decomposition(simulation=True)
+    else:
+        print("Running comparison on real signals.")
+        run_decomposition(simulation=False)
