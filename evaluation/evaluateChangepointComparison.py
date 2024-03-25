@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-def load_files(path="results", simulated=True):
+def load_files(path="../results", simulated=True):
 
     # check whether the file exists
     combined_name = f"Changepoint{'_simulated' if simulated else ''}_WindowSizes.parquet"
