@@ -4,6 +4,7 @@ numpy
 scipy
 tqdm
 matplotlib
+seaborn
 pyarrow
 pandas
 threadpoolctl
