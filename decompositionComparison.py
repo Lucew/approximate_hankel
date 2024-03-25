@@ -34,6 +34,7 @@ def process_signal(signal: tuple[str, np.ndarray, int], window_length: int, sign
         # compute the complete decomposition of the matrix
         left_eigenvectors, svd_vals, right_eigenvectors = np.linalg.svd(hankel, full_matrices=False)
         summed = sum(svd_vals)
+        median_value = np.median(svd_vals)
 
         # make the svd values
         svd_values = []
@@ -68,7 +69,7 @@ def process_signal(signal: tuple[str, np.ndarray, int], window_length: int, sign
                                                                                     random_state)
             diff = hankel - np.dot(left_eigenvectors[:, :idx] * vals[:idx], right_eigenvectors[:idx, :])
             rsvd_fft_results.append((f'reconstruction rsvd fft q={q}, p={p}, rank={rank}', np.linalg.norm(diff)))
-    return name, seed, svd_values, svd_error, summed, rsvd_naive_results, rsvd_fft_results
+    return name, seed, svd_values, svd_error, summed, median_value, rsvd_naive_results, rsvd_fft_results
 
 
 def real_decomposition():
@@ -122,6 +123,7 @@ def signal_loader(signal_information: list[tuple[str, int]], signal_length: int)
 def get_signal_length(window_size: int):
     return 2 * window_size - 1
 
+
 def run_decomposition(simulation=True):
 
     # create different window sizes and specify the number of windows
@@ -160,7 +162,7 @@ def run_decomposition(simulation=True):
                         usable_signals[wl].append((sig, sig_data.shape[0]//wg))
 
     # make a results dict
-    results = {'signal identifier': [], 'seed': [], 'eigenvalue sum': []}
+    results = {'signal identifier': [], 'seed': [], 'eigenvalue sum': [], 'median eigenvalue': []}
 
     # make all the names for the eigenvalues
     for idx in range(eigenvalues):
@@ -221,12 +223,13 @@ def run_decomposition(simulation=True):
                                total=card):
 
                 # unpack the result
-                name, seed, svd_vals, svd_error, eigensum, rsvd_naive_results, rsvd_fft_results = result
+                name, seed, svd_vals, svd_error, eigensum, median_eigval, rsvd_naive_results, rsvd_fft_results = result
 
                 # save the result into the dict
                 results['signal identifier'].append(name)
                 results['seed'].append(seed)
                 results['eigenvalue sum'].append(eigensum)
+                results['median eigenvalue'].append(median_eigval)
                 for name, val in svd_vals:
                     results[name].append(val)
                 for name, val in svd_error:
