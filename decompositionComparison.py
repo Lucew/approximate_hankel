@@ -253,7 +253,7 @@ def run_decomposition(simulation=True):
             print(f"{col}: {df[col].mean()}")
 
         # save it under the window size and clear the results
-        df.to_csv(f"Decomposition_simulated_Results_WindowSize_{window_size}.csv")
+        df.to_csv(f"Decomposition{'_simulated' if simulation else ''}_Results_WindowSize_{window_size}.csv")
 
         # clear the lists
         for value in results.values():
