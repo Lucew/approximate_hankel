@@ -260,6 +260,137 @@ def run_decomposition(simulation=True):
             value.clear()
 
 
+def svd_hankel_signal(signal: tuple[str, np.ndarray, int], window_length: int, signal_length: int,
+                      thread_limit: int = 1) -> dict[str: list]:
+
+    # unwrap name and signal (we only have this tuple, so we can use imap_unordered for multiprocessing)
+    name, signal, seed = signal
+
+    # limit the threads for the BLAS and numpy multiplications
+    nb.set_num_threads(thread_limit)
+    with threadpool_limits(limits=thread_limit):
+
+        # construct the hankel matrix (including fft representation
+        hankel = compile_hankel_parallel(signal, signal_length, window_length, window_length)
+        hankel_fft, fft_len, _ = compile_hankel_fft(signal, signal_length, window_length, window_length)
+
+        # compute the complete decomposition of the matrix
+        left_eigenvectors, svd_vals, right_eigenvectors = np.linalg.svd(hankel, full_matrices=False)
+
+    # get all the negative eigenvalues and create a list from it
+    names = []
+    window_sizes = []
+    eigenvalue_numbers = []
+    eigenvalues = []
+    for idx, val in svd_vals:
+        if svd_vals <= 0:
+            names.append(name)
+            window_sizes.append(window_length)
+            eigenvalue_numbers.append(idx)
+            eigenvalues.append(val)
+    return names, window_sizes, eigenvalue_numbers, eigenvalues
+
+
+def run_negative_check(simulation=True):
+    # create different window sizes and specify the number of windows
+    if simulation:
+        window_sizes = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000]
+        window_sizes = window_sizes[::-1]
+    else:
+        window_sizes = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+        window_sizes = window_sizes[::-1]
+    signal_number = 500
+
+
+    # if we do the comparison for the real signals, we need to figure out which signals have the correct
+    # length for our simulations
+    usable_signals = {wl: [] for wl in window_sizes}
+    if not simulation:
+        with h5py.File('UCRArchive_2018.hdf5') as filet:
+
+            # get all the signal keys from the hdf5 file
+            signals = list(filet.keys())
+
+            # go through the signals and check whether they can be used
+            for sig in tqdm(signals, desc='Find all usable signals from file'):
+
+                # get the signal data from the file
+                sig_data = filet[sig]
+
+                # go through the window lengths
+                for wl in window_sizes:
+                    wg = get_signal_length(wl)
+                    if sig_data.shape[0] > wg:
+                        usable_signals[wl].append((sig, sig_data.shape[0] // wg))
+
+    # make a results dict
+    results = {'signal identifier': [], 'window size': [], 'eigenvalue number': [], 'eigenvalue': []}
+
+    # make multiprocessing to make use of multicore cpus
+    for window_size in window_sizes:
+
+        # compute the end index of the signal
+        sig_length = get_signal_length(window_size)
+
+        # create the function with a function handle
+        function_handle = partial(svd_hankel_signal,
+                                  window_length=window_size,
+                                  signal_length=sig_length,
+                                  thread_limit=1)
+
+        # estimate the cardinality
+        if simulation:
+            # define the number of signals and the signal generator
+            seed = np.random.randint(1, 10_000_000)
+            rnd_state = np.random.RandomState(seed)
+            sig_gen = ChangeSimulator(sig_length, sig_length // 2, rnd_state)
+
+            # check how many different signals the signal generator makes
+            different_signals = [ele for ele in sig_gen.yield_signals()]
+            number_simulations = len(different_signals)
+            card = number_simulations * signal_number
+
+        else:
+            card = sum(ele[1] for ele in usable_signals[window_size])
+
+        # create the signal generator
+        if simulation:
+            sig_gen = signal_generator(signal_number, sig_length, simulation)
+        else:
+            sig_gen = signal_loader(usable_signals[window_size], sig_length)
+
+        # make the description
+        desc = f'Check Eigenvalues for Window Size {window_size}'
+        with mp.Pool(mp.cpu_count()) as pp:
+            for result in tqdm(pp.imap_unordered(function_handle, sig_gen, chunksize=10), desc=desc,
+                               total=card):
+
+                # unpack the result
+                names, window_sizes, eigenvalue_numbers, eigenvalues = result
+
+                # save the result into the dict
+                results = {'signal identifier': [], 'window size': [], 'eigenvalue number': [], 'eigenvalue': []}
+                results['signal identifier'].extend(names)
+                results['window size'].extend(window_sizes)
+                results['eigenvalue number'].extend(eigenvalue_numbers)
+                results['eigenvalue'].extend(eigenvalues)
+
+        # put into dataframe
+        df = pd.DataFrame(results)
+
+        # make a debug print for all the methods
+        print(f"\nWindow Size: {window_size} [supp. {df.shape[0]}].")
+        print("------------------------------------")
+        print(f"There were: {df.shape[0]} negative eigenvalues.\n")
+
+        # save it under the window size and clear the results
+        df.to_csv(f"Negative_Eigenvalues{'_simulated' if simulation else ''}_WindowSize_{window_size}.csv")
+
+        # clear the lists
+        for value in results.values():
+            value.clear()
+
+
 def boolean_string(s):
     s = s.lower()
     if s not in {'false', 'true'}:
@@ -271,10 +402,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Changepoint algorithms speed and accuracy comparison.')
     parser.add_argument('-sim', '--simulated', type=boolean_string, default=True,
                         help='Specifies whether to use simulated or real signals.')
+    parser.add_argument('-neg', '--negative', type=boolean_string, default=False,
+                        help='Specifies whether to check for zero or negative eigenvalues.')
     args = parser.parse_args()
     if args.simulated:
         print("Running comparison on simulated signals.")
-        run_decomposition(simulation=True)
+        if args.negative:
+            run_negative_check(simulation=True)
+        else:
+            run_decomposition(simulation=True)
     else:
         print("Running comparison on real signals.")
-        run_decomposition(simulation=False)
+        if args.negative:
+            run_negative_check(simulation=False)
+        else:
+            run_decomposition(simulation=False)
