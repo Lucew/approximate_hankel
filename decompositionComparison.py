@@ -282,7 +282,7 @@ def svd_hankel_signal(signal: tuple[str, np.ndarray, int], window_length: int, s
     window_sizes = []
     eigenvalue_numbers = []
     eigenvalues = []
-    for idx, val in svd_vals:
+    for idx, val in enumerate(svd_vals):
         if svd_vals <= 0:
             names.append(name)
             window_sizes.append(window_length)
