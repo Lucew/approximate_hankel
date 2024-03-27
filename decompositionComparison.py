@@ -360,7 +360,7 @@ def run_negative_check(simulation=True):
             sig_gen = signal_loader(usable_signals[window_size], sig_length)
 
         # make the description
-        desc = f'Check Eigenvalues for Window Size {window_size}'
+        desc = f'Check Eigenvalues for Window Size {window_size} in {"simulated" if simulation else "real"} signals'
         with mp.Pool(mp.cpu_count()) as pp:
             for result in tqdm(pp.imap_unordered(function_handle, sig_gen, chunksize=10), desc=desc,
                                total=card):
