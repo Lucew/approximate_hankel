@@ -194,3 +194,6 @@ results/
 # any hdf5 files
 *.hdf5
 *.csv
+
+# ignore plots
+*.pgf
