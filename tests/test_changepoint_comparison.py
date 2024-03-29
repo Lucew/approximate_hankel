@@ -139,6 +139,19 @@ def probe_fast_hankel_inner_product(hankel_repr, hankel_matrix, l_windows, n_win
     return fh.evaluate_closeness(way_one, way_two, comment)
 
 
+def probe_fast_hankel_correlation_product(hankel_repr, fft_length, hankel_matrix, other_matrix,
+                                          lag, comment: str):
+    way_one = fh.fast_numba_hankel_correlation_matmul(hankel_repr, fft_length, other_matrix, lag)
+    way_two = fh.normal_correlation_matmul(hankel_matrix, other_matrix)
+    return fh.evaluate_closeness(way_one, way_two, comment)
+
+
+def probe_hankel_construction(time_series, end_idx, l_windows, n_windows, lag, comment: str):
+    way_one = fh.compile_hankel_parallel(time_series, end_idx, l_windows, n_windows, lag)
+    way_two = fh.compile_hankel_naive(time_series, end_idx, l_windows, n_windows, lag)
+    return fh.evaluate_closeness(way_one, way_two, comment)
+
+
 def test_parallelization():
     # define a window length
     window_length = 5000
@@ -184,15 +197,15 @@ def test_parallelization():
 def test_matmul():
     # define some window length
     limit_threads = 12
-    l_windows = 5000
-    n_windows = 5000
+    l_windows = 2000
+    n_windows = 2000
     lag = 1
     run_num = 500
 
     # create a time series of a certain length
     n = 300000
-    # ts = np.random.uniform(size=(n,))*1000
-    ts = np.linspace(0, n, n+1)
+    ts = np.random.uniform(size=(n,))*100
+    # ts = np.linspace(0, n, n+1)
 
     # create a matrix to multiply by
     k = 15
@@ -237,6 +250,8 @@ def test_matmul():
     results.append(probe_fast_fftconvolve_hankel_left_matmul(signal, hankel, multi2, lag, 'Left Matmul fftconvolve working?'))
 
     results.append(probe_hankel_fft_from_matrix(signal, l_windows, n_windows, "FFT representation from Hankel matrix?"))
+    results.append(probe_hankel_construction(signal, end_idx, l_windows, n_windows, lag, "Parallel representation of Hankel matrix?"))
+    results.append(probe_fast_hankel_correlation_product(hankel_rfft[:, 0], fft_len, hankel, multi, lag, "Fast matrix prodcut with correlation?"))
     # results.append(probe_fast_hankel_inner_product(signal, hankel, l_windows, n_windows, lag, 'Inner product working?'))
     print_table(results)
 
@@ -274,11 +289,17 @@ def test_matmul():
         print(timeit.timeit(lambda: fh.normal_hankel_matmul(hankel, multi), number=run_num)/run_num*1000)
         print(timeit.timeit(lambda: fh.normal_hankel_left_matmul(hankel, multi2), number=run_num) / run_num * 1000)
 
-        print("Times for Naive inner Product:")
+        print("\n\nTimes for FFT Correlation Product:")
+        print(timeit.timeit(lambda: fh.fast_numba_hankel_correlation_matmul(hankel_rfft[:, 0], fft_len, multi, lag), number=run_num) / run_num * 1000)
+        print("Times for Naive Correlation Product:")
+        corr = hankel@hankel.T
+        print(timeit.timeit(lambda: fh.normal_hankel_matmul(corr, multi), number=run_num) / run_num * 1000)
+
+        # print("Times for Naive inner Product:")
         # print(timeit.timeit(lambda: fh.normal_hankel_inner(hankel), number=run_num) / run_num * 1000)
         # print(timeit.timeit(lambda: fh.fast_hankel_inner(signal, l_windows, n_windows, lag), number=run_num) / run_num * 1000)
-
+        print()
 
 if __name__ == "__main__":
     test_matmul()
-    test_parallelization()
+    # test_parallelization()
