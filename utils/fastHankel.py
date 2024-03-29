@@ -87,22 +87,45 @@ def compile_hankel_parallel(time_series: np.ndarray, end_index: int, window_size
     if safe:
         hankel.fill(np.NAN)
 
-    # go through the off-diagonals of the hankel matrix in parallel
-    sig_start = end_index-window_size-rank+1
-    for dx in nb.prange(window_size+rank-1):
+    # if the matrix has no lag
+    if lag == 1:
+        # go through the off-diagonals of the hankel matrix in parallel
+        sig_start = end_index-window_size-rank+1
+        for dx in nb.prange(window_size+rank-1):
 
-        # get the corresponding value from the time series
-        val = time_series[sig_start+dx]
+            # get the corresponding value from the time series
+            val = time_series[sig_start+dx]
 
-        # get starting indices of the diagonal
-        rx = int(min(dx, window_size - 1))
-        cx = int(max(0, dx - window_size + 1))
+            # get starting indices of the diagonal
+            rx = int(min(dx, window_size - 1))
+            cx = int(max(0, dx - window_size + 1))
 
-        # set all the values on the off diagonals of the hankel matrix
-        for _ in range(min(rx, rank-cx-1)+1):
-            hankel[rx, cx] = val
-            rx -= 1
-            cx += 1
+            # set all the values on the off diagonals of the hankel matrix
+            for _ in range(min(rx, rank-cx-1)+1):
+                hankel[rx, cx] = val
+                rx -= 1
+                cx += 1
+    else:
+        # go through the off-diagonals of a much larger matrix
+        sig_start = end_index - window_size - lag*(rank - 1)
+
+        # iterate through the skew-diagonals
+        for dx in nb.prange(window_size+(rank-1)*lag):
+
+            # get the corresponding value from the time series
+            val = time_series[sig_start+dx]
+
+            # get starting indices of the diagonal
+            rx = int(min(dx, window_size - 1))
+            cx = int(max(0, dx - window_size + 1))
+
+            # set all the values on the off diagonals of the hankel matrix
+            for _ in range(min(rx, (rank-1)*lag-cx)+1):
+                ncx, offset = divmod(cx, lag)
+                if not offset:
+                    hankel[rx, ncx] = val
+                rx -= 1
+                cx += 1
 
     # check that we did not make a mistake
     if safe:
@@ -406,6 +429,51 @@ def fast_numba_hankel_left_matmul(hankel_fft: np.ndarray, n_windows: int, fft_sh
     return result_buffer.T
 
 
+@nb.njit(parallel=True)
+def fast_numba_hankel_correlation_matmul(hankel_fft: np.ndarray, fft_shape: int,
+                                         other_matrix: np.ndarray, lag: int):
+
+    # get the shape of the other matrix
+    m, n = other_matrix.shape
+
+    # make a buffer if we need it for lagged representation
+    if lag > 1:
+        buffer = np.zeros((lag * m - lag + 1, n), dtype=other_matrix.dtype)
+    else:
+        buffer = other_matrix
+
+    # create the new empty matrix that we will fill with values
+    result_buffer = np.empty((m, n))
+
+    # flip the other matrix
+    out = np.flipud(other_matrix)
+
+    # make a numba parallel loop over the vector of the other matrix (columns)
+    for index in nb.prange(n):
+
+        # compute the fft of the vector
+        fft_x = sp.fft.rfft(out[:, index], n=fft_shape)
+
+        # make the convolution and transform it back
+        first = sp.fft.irfft(hankel_fft*fft_x, n=fft_shape)[(m-1):(m-1)+lag*m:lag]
+        # assert np.allclose(first, result[:, index]), f'{first}\n{result[:, index]}'
+
+        # check whether we have lag
+        if lag > 1:
+            buffer[::lag, index] = first
+            first = buffer[:, index]
+        first = np.flip(first)
+
+        # compute the fft of the vector
+        fft_x = sp.fft.rfft(first, n=fft_shape)
+
+        # multiply the ffts with each other to do the convolution in frequency domain and convert it back
+        # and save it into the output buffer
+        result_buffer[:, index] = sp.fft.irfft(hankel_fft*fft_x, n=fft_shape)[(m-1)*lag:(m-1)*lag+m]
+    return result_buffer
+
+
+
 def fast_fftconv_hankel_matmul(hankel_signal: np.ndarray, other_matrix: np.ndarray, lag: int, workers: int = None):
     # This code has been inspired by:
     #
@@ -491,6 +559,10 @@ def normal_hankel_left_matmul(hankel, other):
 
 def normal_hankel_inner(hankel):
     return hankel.T @ hankel
+
+
+def normal_correlation_matmul(hankel, other_matrix):
+    return hankel @ hankel.T @ other_matrix
 
 
 def run_measurements(thread_counts: list[int],
