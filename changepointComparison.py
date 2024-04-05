@@ -494,7 +494,7 @@ def irlb_fft(hankel_fft_matrix: np.ndarray, nu: int, fft_length: int, windows_nu
             j = k
 
         # W[:, j] = hankel_matrix @ V[:, j] using fft
-        W[:, j] = fast_hankel_matmul(hankel_fft_matrix, windows_length, fft_length, V[:, j:j+1], lag=1)[:, 0]
+        W[:, j] = fast_hankel_matmul(hankel_fft_matrix, windows_length, fft_length, V[:, j:j+1], lag=1)
 
         mprod += 1
         if it > 0:
@@ -506,7 +506,7 @@ def irlb_fft(hankel_fft_matrix: np.ndarray, nu: int, fft_length: int, windows_nu
         # Lanczos process
         while j < m_b:
             # F = W[:, j] @ hankel_matrix using fft
-            F = fast_hankel_left_matmul(hankel_fft_matrix, windows_number, fft_length, W[:, j:j+1], lag=1)[:, 0]
+            F = fast_hankel_left_matmul(hankel_fft_matrix, windows_number, fft_length, W[:, j:j+1].T, lag=1)
             mprod += 1
             F = F - s*V[:, j]
             F = orthogonalize(F, V[:, 0:j+1])
