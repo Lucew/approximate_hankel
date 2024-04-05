@@ -905,7 +905,8 @@ def process_signal(signal_key: str, window_length: int, hdf_path: str, result_ke
 
     # specify the keys of the functions we plan to use (and make sure they are unique)
     # function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft irlb", "fft rsvd", "naive ika"]
-    function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft rsvd", "naive ika"]
+    # function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft rsvd", "naive ika"]
+    function_keys = ["naive svd", "naive ika", "fft ika", "naive irlb", "fft irlb", "naive rsvd", "fft rsvd"]
     assert len(set(function_keys)) == len(function_keys), f"Function keys must not contain duplicates."
     assert reference == function_keys[0], f"{reference} has to be the first function key. Specified: {function_keys}."
 
@@ -992,6 +993,7 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
                              thread_limit: int = 6) -> dict[str:(float, float, int)]:
 
     # specify the keys of the functions we plan to use (and make sure they are unique)
+    # function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft rsvd", "naive ika"]
     function_keys = ["naive svd", "naive ika", "fft ika", "naive irlb", "fft irlb", "naive rsvd", "fft rsvd"]
     assert len(set(function_keys)) == len(function_keys), f"Function keys must not contain duplicates."
     assert reference == function_keys[0], f"{reference} has to be the first function key. Specified: {function_keys}."
