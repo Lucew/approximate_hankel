@@ -16,6 +16,7 @@ from utils.fastHankel import fast_numba_hankel_left_matmul as fast_hankel_left_m
 from utils.fastHankel import get_fast_hankel_representation
 from utils.fastHankel import trigger_numba_matmul_jit
 from utils.fastHankel import compile_hankel_parallel
+from utils.fastHankel import fast_numba_hankel_correlation_matmul
 
 # simulations of signals
 from preprocessing import changepoint_simulator as cps
@@ -66,6 +67,37 @@ def power_method(a_matrix: np.ndarray, x_vector: np.ndarray, n_iterations: int) 
 
     # get the corresponding eigenvalue
     mat_vec = a_matrix @ x_vector
+    eigenvalue = np.linalg.norm(mat_vec)
+    return eigenvalue, mat_vec/eigenvalue
+
+
+def power_method_fft(hankel_fft: np.ndarray, fft_shape: int, x_vector: np.ndarray, n_iterations: int) \
+        -> (float, np.ndarray):
+    """
+    This function searches the largest (dominant) eigenvalue and corresponding eigenvector by repeated multiplication
+    of the matrix A with an initial vector. It assumes a dominant eigenvalue bigger than the second one, otherwise
+    it won't converge.
+
+    For proof and explanation look at:
+    https://pythonnumericalmethods.berkeley.edu/notebooks/chapter15.02-The-Power-Method.html
+    """
+
+    # go through the iterations and continue to scale the returned vector, so we do not reach extreme values
+    # during the iteration we scale the vector by its maximum as we can than easily extract the eigenvalue
+    for _ in range(n_iterations):
+
+        # multiplication with a_matrix.T @ a_matrix as can be seen in explanation of
+        # https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html
+        x_vector = fast_numba_hankel_correlation_matmul(hankel_fft, fft_shape, x_vector, lag=1)
+
+        # scale the vector so we keep the values in bound
+        x_vector = x_vector / np.max(x_vector)
+
+    # get the normed eigenvector
+    x_vector = x_vector / np.linalg.norm(x_vector)
+
+    # get the corresponding eigenvalue
+    mat_vec = fast_numba_hankel_correlation_matmul(hankel_fft, fft_shape, x_vector, lag=1)
     eigenvalue = np.linalg.norm(mat_vec)
     return eigenvalue, mat_vec/eigenvalue
 
@@ -252,6 +284,63 @@ def lanczos_naive(a_matrix: np.ndarray, r_0: np.ndarray, k: int) -> (np.ndarray,
 
         # compute inner product of new_q and hankel matrix
         inner_prod = a_matrix @ new_q
+
+        # compute the new alpha
+        alphas[j + 1] = new_q.T @ inner_prod
+
+        # compute the new r
+        r_i = inner_prod - alphas[j + 1] * new_q - betas[j] * q_i
+
+        # compute the next beta
+        betas[j + 1] = np.linalg.norm(r_i)
+
+        # update the previous q
+        q_i = new_q
+
+    return alphas[1:], betas[1:-1]
+
+
+def implicit_krylov_approximation_fft(hankel_fft: np.ndarray, fft_length, eigvec_future: np.ndarray, rank: int,
+                                      lanczos_rank: int) -> (float, np.ndarray):
+    """
+    This function computes the change point score based on the krylov subspace approximation of the SST as proposed in
+    [1].
+    """
+
+    # compute the tridiagonal matrix from the past hankel matrix
+    alphas, betas = lanczos_fft(hankel_fft, fft_length, eigvec_future, lanczos_rank)
+
+    # compute the singular value decomposition of the tridiagonal matrix (only the biggest)
+    _, eigvecs = tridiagonal_eigenvalues(alphas, betas, rank)
+
+    # compute the similarity score as defined in the ika sst paper and also return our u for the
+    # feedback loop in figure 3 of the paper
+    return 1 - (eigvecs[0, :] * eigvecs[0, :]).sum()
+
+
+def lanczos_fft(a_matrix: np.ndarray, fft_length: int, r_0: np.ndarray, k: int) -> (np.ndarray, np.ndarray):
+    """
+    This function computes the tri-diagonalization matrix from the square matrix C which is the result of the lanczos
+    algorithm.
+
+    The algorithm has been described and proven in [1].
+    """
+
+    # save the initial vector
+    r_i = r_0
+    q_i = np.zeros_like(r_i)
+
+    # initialization of the diagonal elements
+    alphas = np.zeros(shape=(k + 1,), dtype=np.float64)
+    betas = np.ones(shape=(k + 1,), dtype=np.float64)
+
+    # Subroutine 1 of the paper
+    for j in range(k):
+        # compute r_(j+1)
+        new_q = r_i / betas[j]
+
+        # compute inner product of new_q and hankel matrix
+        inner_prod = fast_numba_hankel_correlation_matmul(a_matrix, fft_length, new_q, lag=1)
 
         # compute the new alpha
         alphas[j + 1] = new_q.T @ inner_prod
@@ -705,6 +794,29 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         start = time.perf_counter_ns()
         score = implicit_krylov_approximation_naive(hankel_past, x0, 5, 9)
         decomposition_time += time.perf_counter_ns() - start
+
+    elif key == "fft ika":
+
+        # compile the future hankel matrix (H2)
+        start = time.perf_counter_ns()
+        hankel_future, fft_length, _ = compile_hankel_fft(time_series, end_idx, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
+
+        # make the power iterations
+        start = time.perf_counter_ns()
+        _, x0 = power_method_fft(hankel_future, fft_length, x0, power_iterations)
+        decomposition_time += time.perf_counter_ns() - start
+
+        # compile the past hankel matrix (H1) and compute outer product C as in the paper
+        start = time.perf_counter_ns()
+        hankel_past, fft_length, _ = compile_hankel_fft(time_series, end_idx - lag, window_length, window_number)
+        hankel_construction_time += time.perf_counter_ns() - start
+
+        # compute the scoring using the ika naive implementation
+        start = time.perf_counter_ns()
+        score = implicit_krylov_approximation_fft(hankel_past, fft_length, x0, 5, 9)
+        decomposition_time += time.perf_counter_ns() - start
+
     elif key == "naive svd":
 
         # compile the future hankel matrix (H2)
@@ -749,8 +861,8 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
         score = rayleigh_ritz(hankel_past, x0, 5)
         decomposition_time += time.perf_counter_ns() - start
 
-    elif key == "fft irlb":  # TODO Fix the implementation of fft irlb (has errors too high)
-        raise ValueError("FFT IRLB currently not working.")
+    elif key == "fft irlb":
+
         # compile the future hankel matrix (H2)
         start = time.perf_counter_ns()
         hankel_future, fft_length, _ = compile_hankel_fft(time_series, end_idx, window_length, window_number)
@@ -880,7 +992,7 @@ def process_simulated_signal(window_length: int, result_keys: list[str], referen
                              thread_limit: int = 6) -> dict[str:(float, float, int)]:
 
     # specify the keys of the functions we plan to use (and make sure they are unique)
-    function_keys = ["naive svd", "naive rsvd", "naive irlb", "fft rsvd", "naive ika"]
+    function_keys = ["naive svd", "naive ika", "fft ika", "naive irlb", "fft irlb", "naive rsvd", "fft rsvd"]
     assert len(set(function_keys)) == len(function_keys), f"Function keys must not contain duplicates."
     assert reference == function_keys[0], f"{reference} has to be the first function key. Specified: {function_keys}."
 
@@ -1005,6 +1117,7 @@ def run_simulated_comparison():
 
     # create different window sizes and specify the number of windows
     window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 5000, num=30))[::-1]]
+    window_sizes = window_sizes[:3]
 
     # define the threadlimits used
     threadlimits = [1, 2, 4, 6, 8, 10]
