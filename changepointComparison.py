@@ -343,7 +343,7 @@ def lanczos_fft(a_matrix: np.ndarray, fft_length: int, r_0: np.ndarray, k: int) 
         inner_prod = fast_numba_hankel_correlation_matmul(a_matrix, fft_length, new_q, lag=1)
 
         # compute the new alpha
-        alphas[j + 1] = new_q.T @ inner_prod
+        alphas[j + 1] = (new_q.T @ inner_prod)[0, 0]
 
         # compute the new r
         r_i = inner_prod - alphas[j + 1] * new_q - betas[j] * q_i
@@ -595,7 +595,7 @@ def irlb_fft(hankel_fft_matrix: np.ndarray, nu: int, fft_length: int, windows_nu
         # Lanczos process
         while j < m_b:
             # F = W[:, j] @ hankel_matrix using fft
-            F = fast_hankel_left_matmul(hankel_fft_matrix, windows_number, fft_length, W[:, j:j+1].T, lag=1)
+            F = fast_hankel_left_matmul(hankel_fft_matrix, windows_number, fft_length, W[:, j:j+1].T, lag=1)[0, :]
             mprod += 1
             F = F - s*V[:, j]
             F = orthogonalize(F, V[:, 0:j+1])
