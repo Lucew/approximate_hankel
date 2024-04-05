@@ -35,6 +35,7 @@ def main():
 
     # get the method names
     methods = data["method"].unique()
+    data['time'] = data['hankel construction time'] + data['decomposition time']
 
     # get the window sizes
     window_sizes = sorted(data["window lengths"].unique())
@@ -101,11 +102,10 @@ def main():
     if len(thread_numbers) > 1:
 
         # find the maximum window size that we ran
-        wl = sorted(window_sizes)[-7]
-        print(wl)
+        wl = sorted(window_sizes)[-2]
 
         # go over the methods and window sizes and compute the average computation time
-        computation_times = {"method": [], "thread number": [], "computation time [ms]": []}
+        computation_times = {"method": [], "thread number": [], "computation time [%]": []}
         for method in methods:
 
             # compute the time for one thread for comparison
@@ -117,14 +117,14 @@ def main():
             for thr in thread_numbers:
                 computation_times["method"].append(method)
                 computation_times["thread number"].append(thr)
-                computation_times["computation time [ms]"].append(data[
+                computation_times["computation time [%]"].append(data[
                                                                       (data['method'] == method)
                                                                       & (data["window lengths"] == wl)
                                                                       & (data["max. threads"] == thr)
                                                                       ]
-                                                                  ["time"].mean() / 1_000_000 / cmp_val)
+                                                                  ["time"].mean() / 1_000_000 / cmp_val * 100)
         computation_times = pd.DataFrame(computation_times)
-        plot = sns.barplot(data=computation_times, x="thread number", y="computation time [ms]", hue="method")
+        plot = sns.barplot(data=computation_times, x="thread number", y="computation time [%]", hue="method")
         plt.show()
 
 
