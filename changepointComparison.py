@@ -804,7 +804,7 @@ def transform(time_series: np.ndarray, window_length: int, window_number: int, l
 
         # make the power iterations
         start = time.perf_counter_ns()
-        _, x0 = power_method_fft(hankel_future, fft_length, x0, power_iterations)
+        _, x0 = power_method_fft(hankel_future, fft_length, x0[:, None], power_iterations)
         decomposition_time += time.perf_counter_ns() - start
 
         # compile the past hankel matrix (H1) and compute outer product C as in the paper
@@ -1119,7 +1119,7 @@ def run_simulated_comparison():
 
     # create different window sizes and specify the number of windows
     window_sizes = [int(ele) for ele in np.ceil(np.geomspace(100, 5000, num=30))[::-1]]
-    window_sizes = window_sizes[:3]
+    window_sizes = window_sizes[-3:]
 
     # define the threadlimits used
     threadlimits = [1, 2, 4, 6, 8, 10]
