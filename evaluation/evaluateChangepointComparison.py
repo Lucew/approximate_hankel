@@ -4,6 +4,23 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import matplotlib
+
+
+SAVE_CONFIG = False
+SIMULATION = True
+
+if SAVE_CONFIG:
+    matplotlib.use("pgf")
+    matplotlib.rcParams.update({
+        "pgf.texsystem": "pdflatex",
+        'font.family': 'serif',
+        'font.serif': ['Times New Roman'],
+        'font.size': 22,
+        'text.usetex': True,
+        'pgf.rcfonts': False,
+    })
+    matplotlib.rcParams['figure.figsize'] = 16, 9
 
 
 def load_files(path="../results", simulated=True):
@@ -28,10 +45,11 @@ def load_files(path="../results", simulated=True):
     return data
 
 
-def main():
+def main(simulated=True):
 
     # load the data into memory
-    data = load_files(simulated=True)
+    data = load_files(simulated=simulated)
+    data['Error'] = data['true-score']
 
     # get the method names
     methods = data["method"].unique()
@@ -42,9 +60,16 @@ def main():
 
     # go over the methods and compute the error
     for method in methods:
-        print(f"Method {method} we have a mean error of: \t{data[data['method'] == method]['true-score'].abs().median()}")
+        print(f"Method {method} we have a mean error of: \t{data[data['method'] == method]['Error'].abs().mean()}")
 
+    # make the methods' array and a dict to sort from it
     methods = [method for method in methods if method.endswith("rsvd") or method.endswith("svd") or method.endswith("ika") or method.endswith("naive irlb")]
+    methods[0], methods[4] = methods[4], methods[0]
+    methods[1], methods[2] = methods[2], methods[1]
+    methods_dict = {method: idx for idx, method in enumerate(methods)}
+
+    # sort the dataframe by the methods so the plots keep the same color for all the methods
+    data = data.sort_values(by=['method'], key=lambda x: x.apply(methods_dict.get))
 
     # go over the methods and window sizes and compute the average computation time
     computation_times = {"method": [], "window size N": [], "computation time [ms]": []}
@@ -72,7 +97,7 @@ def main():
 
     # Plot vertical lines where one method becomes faster than the other
     plt.axvline(x=first_overtake, color='black', linestyle='--', linewidth=1)
-    plt.text(first_overtake, plt.gca().get_ylim()[1], f'{first_overtake}', rotation=90, verticalalignment='bottom')
+    plt.text(first_overtake+30, plt.gca().get_ylim()[1], f'{first_overtake}', rotation=0, verticalalignment='bottom')
 
     # Set labels and title
     plt.xlabel("Window size N")
@@ -85,16 +110,26 @@ def main():
         plot.text(x=computation_times["window size N"].max() + 75, y=computation_times[computation_times['method'] == method]["computation time [ms]"].max(), s=complexity[method], va="center")
     plot.spines["top"].set_visible(False)
     plot.spines["right"].set_visible(False)
-    plt.show()
+    if SAVE_CONFIG:
+        plt.savefig(f'Changepoint_Computation_Time{"_simulated" if simulated else ""}.pgf')
+    else:
+        plt.show()
     plt.rcParams['text.usetex'] = False
 
     # make into a dataframe and plot the histograms
-    plot = sns.histplot(data[data['method'].str.endswith("rsvd") | data['method'].str.endswith("ika") | data['method'].str.endswith("naive irlb")], x="true-score", hue="method", multiple="dodge", bins='sturges', log_scale=[False, True])
+    plot = sns.histplot(data[data['method'].str.endswith("rsvd") | data['method'].str.endswith("ika") | data['method'].str.endswith("naive irlb")], x='Error', hue="method", multiple="dodge", bins='sturges', log_scale=[False, True])
     plot.spines["top"].set_visible(False)
     plot.spines["right"].set_visible(False)
-    plt.show()
+    if SAVE_CONFIG:
+        plt.savefig(f'Changepoint_Score_Histogram{"_simulated" if simulated else ""}.pgf')
+    else:
+        plt.show()
+    plt.rcParams['text.usetex'] = False
     plot = sns.histplot(data[data['method'] == "naive svd"], x="score", hue="method", multiple="dodge", bins='sturges', log_scale=[False, True])
-    plt.show()
+    if SAVE_CONFIG:
+        plt.savefig(f'Changepoint_Error_Histogram{"_simulated" if simulated else ""}.pgf')
+    else:
+        plt.show()
 
     # check the scalability of the methods per number of threads
     thread_numbers = data["max. threads"].unique()
@@ -102,7 +137,7 @@ def main():
     if len(thread_numbers) > 1:
 
         # find the maximum window size that we ran
-        wl = sorted(window_sizes)[-2]
+        wl = sorted(window_sizes)[-1]
 
         # go over the methods and window sizes and compute the average computation time
         computation_times = {"method": [], "thread number": [], "computation time [%]": []}
@@ -125,8 +160,11 @@ def main():
                                                                   ["time"].mean() / 1_000_000 / cmp_val * 100)
         computation_times = pd.DataFrame(computation_times)
         plot = sns.barplot(data=computation_times, x="thread number", y="computation time [%]", hue="method")
-        plt.show()
+        if SAVE_CONFIG:
+            plt.savefig(f'Changepoint_Parallelization{"_simulated" if simulated else ""}_WindowSize_{wl}.pgf')
+        else:
+            plt.show()
 
 
 if __name__ == "__main__":
-    main()
+    main(SIMULATION)
