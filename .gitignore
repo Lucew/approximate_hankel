@@ -197,3 +197,4 @@ results/
 
 # ignore plots
 *.pgf
+*.svg

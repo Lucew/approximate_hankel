@@ -52,8 +52,9 @@ def main(simulated=True):
     data['Error'] = data['true-score']
 
     # get the method names
-    methods = data["method"].unique()
+    methods = list(data["method"].unique())
     data['time'] = data['hankel construction time'] + data['decomposition time']
+    data[["Mat. Mult.", "Method"]] = data["method"].str.split(" ", expand=True)
 
     # get the window sizes
     window_sizes = sorted(data["window lengths"].unique())
@@ -63,9 +64,9 @@ def main(simulated=True):
         print(f"Method {method} we have a mean error of: \t{data[data['method'] == method]['Error'].abs().mean()}")
 
     # make the methods' array and a dict to sort from it
-    methods = [method for method in methods if method.endswith("rsvd") or method.endswith("svd") or method.endswith("ika") or method.endswith("naive irlb")]
-    methods[0], methods[4] = methods[4], methods[0]
-    methods[1], methods[2] = methods[2], methods[1]
+    # methods[0], methods[-1] = methods[-1], methods[0]
+    # methods[1], methods[2] = methods[2], methods[1]
+    methods.sort(key=lambda x: (x.split(' ')[1], tuple(-ord(ele) for ele in x.split(' ')[0])))
     methods_dict = {method: idx for idx, method in enumerate(methods)}
 
     # sort the dataframe by the methods so the plots keep the same color for all the methods
@@ -78,14 +79,15 @@ def main(simulated=True):
         for wl in window_sizes:
             computation_times["method"].append(method)
             computation_times["window size N"].append(wl)
-            computation_times["computation time [ms]"].append(data[(data['method'] == method) & (data["window lengths"] == wl) & (data["max. threads"] == 6)]["time"].mean(skipna=True)/1_000_000)
+            computation_times["computation time [ms]"].append(data[(data['method'] == method) & (data["window lengths"] == wl) & (data["max. threads"] == 10)]["time"].mean(skipna=True)/1_000_000)
 
     # make into a dataframe and plot
     plt.rcParams['text.usetex'] = True
     computation_times = pd.DataFrame(computation_times)
+    computation_times[["Mat. Mul.", "Method"]] = computation_times["method"].str.split(" ", expand=True)
 
     # Plot the computation times
-    plot = sns.lineplot(data=computation_times, x="window size N", y="computation time [ms]", hue="method")
+    plot = sns.lineplot(data=computation_times, x="window size N", y="computation time [ms]", hue="Method", style="Mat. Mul.")
 
     # group the methods after the window sizes
     grouped = computation_times.groupby("window size N")
@@ -105,19 +107,20 @@ def main(simulated=True):
     plt.title("Computation Time Comparison")
     plot.set(yscale="log")
 
-    complexity = {"naive svd": "O($N^{3}$)", "naive rsvd": "O($N^{2}$)", "fft rsvd": "O($N*logN$)", "naive ika": "O($N^{3}$)" , "naive irlb": "O($N^{2}$)"}
+    complexity = {"naive svd": r"$\mathcal{O}(N^{3})$", "naive rsvd": r"$\mathcal{O}(N^{2})$", "fft rsvd": r"$\mathcal{O}(N*logN)$", "naive ika": r"$\mathcal{O}(N^{3})$", "fft ika": r"$\mathcal{O}(N*logN)$", "naive irlb": r"$\mathcal{O}(N^{2})$", "fft irlb": r"$\mathcal{O}(N*logN)$"}
     for method in methods:
         plot.text(x=computation_times["window size N"].max() + 75, y=computation_times[computation_times['method'] == method]["computation time [ms]"].max(), s=complexity[method], va="center")
     plot.spines["top"].set_visible(False)
     plot.spines["right"].set_visible(False)
     if SAVE_CONFIG:
+        plt.savefig(f'Changepoint_Computation_Time{"_simulated" if simulated else ""}.svg')
         plt.savefig(f'Changepoint_Computation_Time{"_simulated" if simulated else ""}.pgf')
     else:
         plt.show()
     plt.rcParams['text.usetex'] = False
 
     # make into a dataframe and plot the histograms
-    plot = sns.histplot(data[data['method'].str.endswith("rsvd") | data['method'].str.endswith("ika") | data['method'].str.endswith("naive irlb")], x='Error', hue="method", multiple="dodge", bins='sturges', log_scale=[False, True])
+    plot = sns.histplot(data[data['method'] != "naive svd"], x='Error', hue="method", multiple="dodge", bins='sturges', log_scale=[False, True])
     plot.spines["top"].set_visible(False)
     plot.spines["right"].set_visible(False)
     if SAVE_CONFIG:
