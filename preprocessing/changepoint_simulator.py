@@ -144,12 +144,19 @@ def main():
     import matplotlib.pyplot as plt
 
     # make a signal generator
-    gn = ChangeSimulator(1000, 500, np.random.RandomState(10))
+    gn = ChangeSimulator(1000, 500, np.random.RandomState(12))
 
     # simulate some signals
-    for _ in range(2):
-        for name, signal in gn.yield_signals():
-            plt.plot(signal)
+    fig, ax = plt.subplots(1, 1)
+    for _ in range(1):
+        for idx, (name, signal) in enumerate(gn.yield_signals()):
+            signal = (signal-np.min(signal))/(np.max(signal)-np.min(signal))-idx*1.2
+            ax.plot(signal, label=name.split('_')[0])
+            ax.text(x=-40, y=signal[0],s=idx+1, va="center", fontsize='x-large')
+    plt.legend(loc='upper right')
+    ax.set_ylim([-4, 1.5])
+    plt.axis('off')
+    plt.savefig(f'Simulated_Signals.pgf')
     plt.show()
 
 
