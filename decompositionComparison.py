@@ -32,7 +32,7 @@ def process_signal(signal: tuple[str, np.ndarray, int], window_length: int, sign
         hankel_fft, fft_len, _ = compile_hankel_fft(signal, signal_length, window_length, window_length)
 
         # compute the complete decomposition of the matrix
-        left_eigenvectors, svd_vals, right_eigenvectors = np.linalg.svd(hankel, full_matrices=False)
+        left_eigenvectors, svd_vals, right_eigenvectors = np.linalg.svd(hankel, full_matrices=False, hermitian=True)
         summed = sum(svd_vals)
         median_value = np.median(svd_vals)
 
@@ -275,14 +275,14 @@ def svd_hankel_signal(signal: tuple[str, np.ndarray, int], window_length: int, s
         hankel_fft, fft_len, _ = compile_hankel_fft(signal, signal_length, window_length, window_length)
 
         # compute the complete decomposition of the matrix
-        left_eigenvectors, svd_vals, right_eigenvectors = np.linalg.svd(hankel, full_matrices=False)
+        svd_vals_real = np.linalg.eigvalsh(hankel)
 
     # get all the negative eigenvalues and create a list from it
     names = []
     window_sizes = []
     eigenvalue_numbers = []
     eigenvalues = []
-    for idx, val in enumerate(svd_vals):
+    for idx, val in enumerate(svd_vals_real):
         if val <= 0:
             names.append(name)
             window_sizes.append(window_length)
