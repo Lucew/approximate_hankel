@@ -109,7 +109,7 @@ def signal_generator(repetitions: int, signal_length: int, simulation=True):
             rnd_state = np.random.RandomState(seed)
             sig_gen = ChangeSimulator(signal_length, signal_length // 2, rnd_state)
             for name, signal in sig_gen.yield_signals():
-                yield f'name_{seed}', signal, seed
+                yield f'{name}_{seed}', signal, seed
 
 
 def signal_loader(signal_information: list[tuple[str, int]], signal_length: int):
