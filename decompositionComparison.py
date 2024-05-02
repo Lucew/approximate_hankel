@@ -382,6 +382,7 @@ def run_negative_check(simulation=True):
         print(f"\nWindow Size: {window_size} [supp. {df.shape[0]}].")
         print("------------------------------------")
         print(f"There were: {df.shape[0]} negative eigenvalues in {len(df['signal identifier'].unique())} matrices.\n")
+        print(f"These names were: {list(df['signal identifier'].unique())}")
 
         # save it under the window size and clear the results
         df.to_csv(f"Negative_Eigenvalues{'_simulated' if simulation else ''}_WindowSize_{window_size}.csv")
