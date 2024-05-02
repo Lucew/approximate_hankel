@@ -11,8 +11,8 @@ import warnings
 
 # if this is True, the figure is saved as pgf
 # if this is False, the figure is plotted
-SAVE_CONFIG = True
-SIMULATION = True
+SAVE_CONFIG = False
+SIMULATION = False
 
 if SAVE_CONFIG:
     matplotlib.use("pgf")
@@ -89,6 +89,8 @@ def main(simulated=True):
     # get the window sizes
     n_name = 'Matrix Dim. NxN'
     window_sizes = sorted(data[n_name].unique())
+    for ws in window_sizes:
+        print(f'For window size {ws} we have: {data[data[n_name] == ws].shape[0]} matrices.')
 
     # get all the eigenvalues for one window size into an array
     eigcols = [col for col in data.columns if col.startswith("eigenvalue") and not col.endswith("sum")]
@@ -158,15 +160,18 @@ def main(simulated=True):
     # check how many eigenvalues are above the threshold
     above = data[eigcols].to_numpy()
     thresh = np.repeat(threshold.values[:, None], above.shape[1], axis=1)
-    above = np.mean((above >= thresh).sum(axis=1))
+    gavis_threshold = (above >= thresh).sum(axis=1)
+    above = np.mean(gavis_threshold)
     estimated_rank_gavis = np.median(above)
     threshold = np.mean(threshold)
 
     # compute the threshold as proposed by Golyndina2020
     reconstruction_cols = [col for col in data.columns if col.startswith("reconstruction svd")]
     other_cols = [n_name]
-    estimated_rank_aic = np.mean(bic_criterion(data[reconstruction_cols+other_cols].to_numpy(), method='AIC'))
-    estimated_rank_bic = np.mean(bic_criterion(data[reconstruction_cols+other_cols].to_numpy(), method='BIC'))
+    aic_threshold = bic_criterion(data[reconstruction_cols+other_cols].to_numpy(), method='AIC')
+    estimated_rank_aic = np.mean(aic_threshold)
+    bic_threshold = bic_criterion(data[reconstruction_cols+other_cols].to_numpy(), method='BIC')
+    estimated_rank_bic = np.mean(bic_threshold)
     print(f'Estimated threshold from BIC criterium is [{estimated_rank_bic}] and from AIC [{estimated_rank_aic}], '
           f'for Gavis it is [{estimated_rank_gavis}].')
 
@@ -208,6 +213,19 @@ def main(simulated=True):
     plt.tight_layout()
     if SAVE_CONFIG:
         plt.savefig(f'EigenvalueSpectrum{"_simulated" if simulated else ""}.pgf')
+    else:
+        plt.show()
+
+    # make violin plots from the thresholds
+    fig, ax = plt.subplots()
+    ax.grid(axis='y', linestyle='-', alpha=0.8, zorder=0)
+    ax.set_axisbelow(True)
+    plot3 = sns.violinplot(pd.DataFrame({'BIC': bic_threshold, 'AIC': aic_threshold, 'Noise estimation': gavis_threshold}))
+    plot3.spines["top"].set_visible(False)
+    plot3.spines["right"].set_visible(False)
+    plt.tight_layout()
+    if SAVE_CONFIG:
+        plt.savefig(f'Thresholds{"_simulated" if simulated else ""}.pgf')
     else:
         plt.show()
 
