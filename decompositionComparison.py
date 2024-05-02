@@ -361,7 +361,12 @@ def run_negative_check(simulation=True):
 
         # make the description
         desc = f'Check Eigenvalues for Window Size {window_size} in {"simulated" if simulation else "real"} signals'
+
+        # make a dict to save the results
+        results = {'signal identifier': [], 'window size': [], 'eigenvalue number': [], 'eigenvalue': []}
         with mp.Pool(mp.cpu_count()) as pp:
+
+            # iterate through the signals
             for result in tqdm(pp.imap_unordered(function_handle, sig_gen, chunksize=10), desc=desc,
                                total=card):
 
@@ -369,7 +374,6 @@ def run_negative_check(simulation=True):
                 names, window_sizes, eigenvalue_numbers, eigenvalues = result
 
                 # save the result into the dict
-                results = {'signal identifier': [], 'window size': [], 'eigenvalue number': [], 'eigenvalue': []}
                 results['signal identifier'].extend(names)
                 results['window size'].extend(window_sizes)
                 results['eigenvalue number'].extend(eigenvalue_numbers)
