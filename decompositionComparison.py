@@ -1,6 +1,7 @@
 import multiprocessing as mp
 import numpy as np
 import numba as nb
+import scipy as sp
 import h5py
 import pandas as pd
 from functools import partial
@@ -275,7 +276,7 @@ def svd_hankel_signal(signal: tuple[str, np.ndarray, int], window_length: int, s
         hankel_fft, fft_len, _ = compile_hankel_fft(signal, signal_length, window_length, window_length)
 
         # compute the complete decomposition of the matrix
-        svd_vals_real = np.linalg.eigvalsh(hankel)
+        svd_vals_real = sp.linalg.svdvals(hankel)
 
     # get all the negative eigenvalues and create a list from it
     names = []
