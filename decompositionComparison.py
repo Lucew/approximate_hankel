@@ -283,11 +283,11 @@ def svd_hankel_signal(signal: tuple[str, np.ndarray, int], window_length: int, s
     eigenvalue_numbers = []
     eigenvalues = []
     for idx, val in enumerate(svd_vals_real):
-        if val < 0:
+        if val < -10*np.finfo(np.float64).eps:
             names.append(name)
             window_sizes.append(window_length)
             eigenvalue_numbers.append(idx)
-            eigenvalues.append(val)
+            eigenvalues.append(val/np.sum(svd_vals_real))
     return names, window_sizes, eigenvalue_numbers, eigenvalues
 
 
@@ -361,9 +361,6 @@ def run_negative_check(simulation=True):
 
         # make the description
         desc = f'Check Eigenvalues for Window Size {window_size} in {"simulated" if simulation else "real"} signals'
-
-        # make a dict to save the results
-        results = {'signal identifier': [], 'window size': [], 'eigenvalue number': [], 'eigenvalue': []}
         with mp.Pool(mp.cpu_count()) as pp:
 
             # iterate through the signals
@@ -386,7 +383,6 @@ def run_negative_check(simulation=True):
         print(f"\nWindow Size: {window_size} [supp. {df.shape[0]}].")
         print("------------------------------------")
         print(f"There were: {df.shape[0]} negative eigenvalues in {len(df['signal identifier'].unique())} matrices.\n")
-        print(f"These names were: {list(df['signal identifier'].unique())}")
 
         # save it under the window size and clear the results
         df.to_csv(f"Negative_Eigenvalues{'_simulated' if simulation else ''}_WindowSize_{window_size}.csv")
