@@ -277,6 +277,7 @@ def svd_hankel_signal(signal: tuple[str, np.ndarray, int], window_length: int, s
 
         # compute the complete decomposition of the matrix
         assert sp.linalg.ishermitian(hankel)
+        np.linalg.cholesky(hankel)
         svd_vals_real = np.linalg.eigvalsh(hankel)
 
     # get all the negative eigenvalues and create a list from it
