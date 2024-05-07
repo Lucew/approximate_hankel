@@ -1,6 +1,7 @@
 import multiprocessing as mp
 import numpy as np
 import numba as nb
+import scipy as sp
 import h5py
 import pandas as pd
 from functools import partial
@@ -275,6 +276,7 @@ def svd_hankel_signal(signal: tuple[str, np.ndarray, int], window_length: int, s
         hankel_fft, fft_len, _ = compile_hankel_fft(signal, signal_length, window_length, window_length)
 
         # compute the complete decomposition of the matrix
+        assert sp.linalg.ishermitian(hankel)
         svd_vals_real = np.linalg.eigvalsh(hankel)
 
     # get all the negative eigenvalues and create a list from it
@@ -282,7 +284,7 @@ def svd_hankel_signal(signal: tuple[str, np.ndarray, int], window_length: int, s
     window_sizes = []
     eigenvalue_numbers = []
     eigenvalues = []
-    for idx, val in enumerate(svd_vals_real):
+    for idx, val in enumerate(svd_vals_real[:]):
         if val < -10*np.finfo(np.float64).eps:
             names.append(name)
             window_sizes.append(window_length)
@@ -380,12 +382,12 @@ def run_negative_check(simulation=True):
         df = pd.DataFrame(results)
 
         # make a debug print for all the methods
-        print(f"\nWindow Size: {window_size} [supp. {df.shape[0]}].")
+        print(f"\nWindow Size: {window_size} [supp. {card}].")
         print("------------------------------------")
-        print(f"There were: {df.shape[0]} negative eigenvalues in {len(df['signal identifier'].unique())} matrices.\n")
+        print(f"There were: {df.shape[0]} negative eigenvalues in {len(df['signal identifier'].unique())}/{card} matrices.\n")
 
         # save it under the window size and clear the results
-        df.to_csv(f"Negative_Eigenvalues{'_simulated' if simulation else ''}_WindowSize_{window_size}.csv")
+        df.to_csv(f"Negative_Eigenvalues{'_simulated' if simulation else ''}_WindowSize_{window_size}_Matrices_{card}.csv")
 
         # clear the lists
         for value in results.values():
