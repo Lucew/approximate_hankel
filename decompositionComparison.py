@@ -276,8 +276,11 @@ def svd_hankel_signal(signal: tuple[str, np.ndarray, int], window_length: int, s
         hankel_fft, fft_len, _ = compile_hankel_fft(signal, signal_length, window_length, window_length)
 
         # compute the complete decomposition of the matrix
-        assert sp.linalg.ishermitian(hankel)
-        np.linalg.cholesky(hankel)
+        assert sp.linalg.ishermitian(hankel), f'Matrix from {name} is not hermitian.'
+        try:
+            np.linalg.cholesky(hankel)
+        except np.linalg.LinAlgError:
+            print(f'Cholesky says matrix {name} is not positive definite.')
         svd_vals_real = np.linalg.eigvalsh(hankel)
 
     # get all the negative eigenvalues and create a list from it
