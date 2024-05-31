@@ -33,8 +33,10 @@ days. Run [changepointComparison.py](changepointComparison.py) with the flag `-s
 
 ## Creating the plots
 Once both results are available, the directory [evaluation](evaluation/) contains all necessary code to plot the results
-similar to the paper. The naming conventions are similar to the computation scripts. Change the global variables
-`SAVE_CONFIG = False` at the beginning of the plot scripts to see the plots immediately, otherwise they will be saved 
-as .pgf files. `SIMULATION = False` and `SIMULATION = True` toggles between signals from the UCR archive and simulated
-signals.
+similar to the paper. There are more plots available than we could fit into the paper. The main plots also contained in
+in the paper are a result of [evaluateDecomposition.py](evaluation/evaluateDecomposition.py) for the overall performance
+of the decomposition and [evaluateChangepointComparison.py](evaluation/evaluateChangepointComparison.py) for the score
+error and the computation times. Change the global variables at the beginning of the plot scripts `SAVE_CONFIG = False` 
+to see the plots immediately, otherwise they will be saved as .pgf files. `SIMULATION = False` and `SIMULATION = True` 
+toggles between signals from the UCR archive and simulated signals.
 
