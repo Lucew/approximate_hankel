@@ -53,6 +53,6 @@ licensed under the MIT license at the time of publishing this code.
 We also modified code from [fbpca](https://github.com/facebookarchive/fbpca) licensed using the BSD licensed at the time
 of publishing this code. Additionally, we want to express our gratitude to the developers of
 [rocket-fft](https://github.com/styfenschaer/rocket-fft) lincensed with a BSD3 license, which enabled us to use numba
-with the FFT an signicantly increase the speed of the algorithms.
+with the FFT and signicantly increase the speed of the algorithms.
 [Threadpoolctl](https://github.com/joblib/threadpoolctl) with a BSD3 license was used to make measurements with
 thread limitations.
