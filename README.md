@@ -41,3 +41,18 @@ for the score error and the computation times. Change the global variables at th
 `SAVE_CONFIG = False` to see the plots immediately, otherwise, they will be saved as .pgf files. `SIMULATION = False` 
 and `SIMULATION = True` toggles between signals from the UCR archive and simulated signals.
 
+## Acknowledgement
+Projects like this are never solely the outcome of one research paper.
+Therefore, we want to thank all the countless contributors and initiators of Python and key libraries like numpy, 
+scipy, matplotlib, tqdm, seaborn, numba and pandas.
+
+Other than that, this repository contains modified code from [irlbpy](https://github.com/bwlewis/irlbpy) licensed under
+the APL2.0 at the time of publishing this code.
+We also took inspiration from the implementation of [SST](https://github.com/statefb/singular-spectrum-transformation)
+licensed under the MIT license at the time of publishing this code.
+We also modified code from [fbpca](https://github.com/facebookarchive/fbpca) licensed using the BSD licensed at the time
+of publishing this code. Additionally, we want to express our gratitude to the developers of
+[rocket-fft](https://github.com/styfenschaer/rocket-fft) lincensed with a BSD3 license, which enabled us to use numba
+with the FFT an signicantly increase the speed of the algorithms.
+[Threadpoolctl](https://github.com/joblib/threadpoolctl) with a BSD3 license was used to make measurements with
+thread limitations.
