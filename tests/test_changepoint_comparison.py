@@ -251,7 +251,7 @@ def test_matmul():
 
     results.append(probe_hankel_fft_from_matrix(signal, l_windows, n_windows, "FFT representation from Hankel matrix?"))
     results.append(probe_hankel_construction(signal, end_idx, l_windows, n_windows, lag, "Parallel representation of Hankel matrix?"))
-    results.append(probe_fast_hankel_correlation_product(hankel_rfft[:, 0], fft_len, hankel, multi, lag, "Fast matrix prodcut with correlation?"))
+    results.append(probe_fast_hankel_correlation_product(hankel_rfft[:, 0], fft_len, hankel, multi2.T, lag, "Fast matrix product with correlation?"))
     # results.append(probe_fast_hankel_inner_product(signal, hankel, l_windows, n_windows, lag, 'Inner product working?'))
     print_table(results)
 

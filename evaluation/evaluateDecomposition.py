@@ -11,7 +11,7 @@ import warnings
 
 # if this is True, the figure is saved as pgf
 # if this is False, the figure is plotted
-SAVE_CONFIG = False
+SAVE_CONFIG = True
 SIMULATION = False
 
 if SAVE_CONFIG:
@@ -20,7 +20,7 @@ if SAVE_CONFIG:
         "pgf.texsystem": "pdflatex",
         'font.family': 'serif',
         'font.serif': ['Times New Roman'],
-        'font.size': 22,
+        'font.size': 30,
         'text.usetex': True,
         'pgf.rcfonts': False,
     })
@@ -119,13 +119,13 @@ def main(simulated=True):
         # melt the data into format to use with seaborn
         recon_cols = rsvd_recon_cols + fft_rsvd_recon_cols
         grouped_data = data[recon_cols + [n_name]].groupby(n_name).mean()
-        reconstruction_df = grouped_data.melt(value_vars=recon_cols, value_name='Normalized Difference to SVD Reconstruction (Frobenius Norm)', var_name='Method')
+        reconstruction_df = grouped_data.melt(value_vars=recon_cols, value_name=r'Normalized Frobenius Norm', var_name='Method')
         reconstruction_df['Reconstruction Rank'] = reconstruction_df['Method'].apply(lambda x: x.split(' ')[-1].replace('rank=', ''))
         reconstruction_df['Parameter'] = reconstruction_df['Method'].apply(lambda x: x.split(" ")[3][:-1])
         reconstruction_df['Method'] = reconstruction_df['Method'].apply(lambda x: " ".join(x.split(' ')[1:3]))
 
         # plot the reconstruction error
-        recon_plot = sns.lineplot(reconstruction_df, x='Reconstruction Rank', y='Normalized Difference to SVD Reconstruction (Frobenius Norm)', hue='Parameter', errorbar=None, style='Method')
+        recon_plot = sns.lineplot(reconstruction_df, x='Reconstruction Rank', y=r'Normalized Frobenius Norm', hue='Parameter', errorbar=None, style='Method')
 
         # add some dummy plots so the legend cols are good
         recon_plot.plot([np.NaN, np.NaN], recon_plot.get_xlim(), color='w', alpha=0, label=' ')
@@ -137,6 +137,7 @@ def main(simulated=True):
         recon_plot.spines["right"].set_visible(False)
         recon_plot.set_ylim([10e-12, 4*10e-7])
         recon_plot.legend(loc='lower right', ncols=2, title=f'Oversampling p={target_p}')
+        plt.setp(recon_plot.get_legend().get_texts(), fontsize='22')
         plt.grid(axis='both', linestyle='-', alpha=0.8)
         plt.tight_layout()
         if SAVE_CONFIG:

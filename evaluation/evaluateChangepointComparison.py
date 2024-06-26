@@ -7,8 +7,8 @@ import seaborn as sns
 import matplotlib
 
 
-SAVE_CONFIG = False
-SIMULATION = True
+SAVE_CONFIG = True
+SIMULATION = False
 
 if SAVE_CONFIG:
     matplotlib.use("pgf")
@@ -16,7 +16,7 @@ if SAVE_CONFIG:
         "pgf.texsystem": "pdflatex",
         'font.family': 'serif',
         'font.serif': ['Times New Roman'],
-        'font.size': 22,
+        'font.size': 30,
         'text.usetex': True,
         'pgf.rcfonts': False,
     })
@@ -74,12 +74,13 @@ def main(simulated=True):
 
     # go over the methods and window sizes and compute the average computation time
     computation_times = {"method": [], "window size N": [], "computation time [ms]": []}
+    curr_threadlim = 10 if simulated else 6
     for method in methods:
-        print(data[data['method'] == method].shape)
+        print(f'{method} in progress {data[(data["method"] == method)].shape[0]} matrices.')
         for wl in window_sizes:
             computation_times["method"].append(method)
             computation_times["window size N"].append(wl)
-            computation_times["computation time [ms]"].append(data[(data['method'] == method) & (data["window lengths"] == wl) & (data["max. threads"] == 10)]["time"].mean(skipna=True)/1_000_000)
+            computation_times["computation time [ms]"].append(data[(data['method'] == method) & (data["window lengths"] == wl) & (data["max. threads"] == curr_threadlim)]["time"].mean(skipna=True)/1_000_000)
 
     # make into a dataframe and plot
     plt.rcParams['text.usetex'] = True
@@ -87,6 +88,9 @@ def main(simulated=True):
     computation_times[["Mat. Mul.", "Method"]] = computation_times["method"].str.split(" ", expand=True)
 
     # Plot the computation times
+    fig, ax = plt.subplots()
+    ax.grid(axis='y', linestyle='-', alpha=0.8, zorder=0)
+    ax.set_axisbelow(True)
     plot = sns.lineplot(data=computation_times, x="window size N", y="computation time [ms]", hue="Method", style="Mat. Mul.")
 
     # group the methods after the window sizes
@@ -101,6 +105,11 @@ def main(simulated=True):
     plt.axvline(x=first_overtake, color='black', linestyle='--', linewidth=1)
     plt.text(first_overtake+30, plt.gca().get_ylim()[1], f'{first_overtake}', rotation=0, verticalalignment='bottom')
 
+    # add some dummy plots so the legend cols are good
+    plot.set_xlim([-100, 5000])
+    plot.plot([np.NaN, np.NaN], plot.get_xlim(), color='w', alpha=0, label='          ')
+    plot.plot([np.NaN, np.NaN], plot.get_xlim(), color='w', alpha=0, label='          ')
+
     # Set labels and title
     plt.xlabel("Window size N")
     plt.ylabel("Computation time [ms]")
@@ -112,25 +121,35 @@ def main(simulated=True):
         plot.text(x=computation_times["window size N"].max() + 75, y=computation_times[computation_times['method'] == method]["computation time [ms]"].max(), s=complexity[method], va="center")
     plot.spines["top"].set_visible(False)
     plot.spines["right"].set_visible(False)
+    plot.legend(loc='upper left', ncols=2)
+    plt.grid(axis='y', linestyle='-', alpha=0.4, zorder=0)
     if SAVE_CONFIG:
-        plt.savefig(f'Changepoint_Computation_Time{"_simulated" if simulated else ""}.svg')
-        plt.savefig(f'Changepoint_Computation_Time{"_simulated" if simulated else ""}.pgf')
+        # plt.savefig(f'Changepoint_Computation_Time{"_simulated" if simulated else ""}.svg')
+        plt.savefig(f'Changepoint_Computation_Time{"_simulated" if simulated else ""}.pgf', bbox_inches='tight')
     else:
         plt.show()
     plt.rcParams['text.usetex'] = False
 
     # make into a dataframe and plot the histograms
+    fig, ax = plt.subplots()
+    ax.grid(axis='y', linestyle='-', alpha=0.8, zorder=0)
+    ax.set_axisbelow(True)
     plot = sns.histplot(data[data['method'] != "naive svd"], x='Error', hue="method", multiple="dodge", bins='sturges', log_scale=[False, True])
     plot.spines["top"].set_visible(False)
     plot.spines["right"].set_visible(False)
     if SAVE_CONFIG:
-        plt.savefig(f'Changepoint_Score_Histogram{"_simulated" if simulated else ""}.pgf')
+        plt.savefig(f'Changepoint_Error_Histogram{"_simulated" if simulated else ""}.pgf')
     else:
         plt.show()
     plt.rcParams['text.usetex'] = False
+
+    # plot the score histogram
+    fig, ax = plt.subplots()
+    ax.grid(axis='y', linestyle='-', alpha=0.8, zorder=0)
+    ax.set_axisbelow(True)
     plot = sns.histplot(data[data['method'] == "naive svd"], x="score", hue="method", multiple="dodge", bins='sturges', log_scale=[False, True])
     if SAVE_CONFIG:
-        plt.savefig(f'Changepoint_Error_Histogram{"_simulated" if simulated else ""}.pgf')
+        plt.savefig(f'Changepoint_Score_Histogram{"_simulated" if simulated else ""}.pgf')
     else:
         plt.show()
 
@@ -155,13 +174,17 @@ def main(simulated=True):
             for thr in thread_numbers:
                 computation_times["method"].append(method)
                 computation_times["thread number"].append(thr)
-                computation_times["computation time [%]"].append(data[
-                                                                      (data['method'] == method)
-                                                                      & (data["window lengths"] == wl)
-                                                                      & (data["max. threads"] == thr)
-                                                                      ]
-                                                                  ["time"].mean() / 1_000_000 / cmp_val * 100)
+                comp_time = data[(data['method'] == method)
+                                 & (data["window lengths"] == wl)
+                                 & (data["max. threads"] == thr)]["time"].mean() / 1_000_000
+                print(f'Method {method} takes {comp_time:0.2f} ms with {thr} threads.')
+                computation_times["computation time [%]"].append(comp_time / cmp_val * 100)
         computation_times = pd.DataFrame(computation_times)
+
+        # plot the parallelization speed up
+        fig, ax = plt.subplots()
+        ax.grid(axis='y', linestyle='-', alpha=0.8, zorder=0)
+        ax.set_axisbelow(True)
         plot = sns.barplot(data=computation_times, x="thread number", y="computation time [%]", hue="method")
         if SAVE_CONFIG:
             plt.savefig(f'Changepoint_Parallelization{"_simulated" if simulated else ""}_WindowSize_{wl}.pgf')
