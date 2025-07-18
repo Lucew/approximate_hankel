@@ -9,9 +9,11 @@ import seaborn as sns
 import matplotlib
 import warnings
 
+from scipy.ndimage import rotate
+
 # if this is True, the figure is saved as pgf
 # if this is False, the figure is plotted
-SAVE_CONFIG = True
+SAVE_CONFIG = False
 SIMULATION = False
 
 if SAVE_CONFIG:
@@ -112,33 +114,80 @@ def main(simulated=True):
         for q in range(4):
             term = f'q={q}'
             tmp = [col for col in rsvd_recon_cols if term in col]
-            data[tmp] = (data[tmp].to_numpy()-data[svd_recon_cols].to_numpy())/((data[n_name].to_numpy()**2)[:, None]*summed.to_numpy()[:, None])
+            # data[tmp] = (data[tmp].to_numpy()-data[svd_recon_cols].to_numpy())/((data[n_name].to_numpy()**2)[:, None]*summed.to_numpy()[:, None])
+            data[tmp] = data[tmp].to_numpy()/data[svd_recon_cols].to_numpy()-1
             tmp = [col for col in fft_rsvd_recon_cols if term in col]
-            data[tmp] = (data[tmp].to_numpy()-data[svd_recon_cols].to_numpy())/((data[n_name].to_numpy()**2)[:, None]*summed.to_numpy()[:, None])
+            # data[tmp] = (data[tmp].to_numpy()-data[svd_recon_cols].to_numpy())/((data[n_name].to_numpy()**2)[:, None]*summed.to_numpy()[:, None])
+            data[tmp] = data[tmp].to_numpy()/data[svd_recon_cols].to_numpy()-1
 
         # melt the data into format to use with seaborn
         recon_cols = rsvd_recon_cols + fft_rsvd_recon_cols
         grouped_data = data[recon_cols + [n_name]].groupby(n_name).mean()
-        reconstruction_df = grouped_data.melt(value_vars=recon_cols, value_name=r'Normalized Frobenius Norm', var_name='Method')
+        # reconstruction_df = grouped_data.melt(value_vars=recon_cols, value_name=r'Normalized Frobenius Norm', var_name='Method')
+        reconstruction_df = grouped_data.melt(value_vars=recon_cols, value_name=r'Normalized Error', var_name='Method')
         reconstruction_df['Reconstruction Rank'] = reconstruction_df['Method'].apply(lambda x: x.split(' ')[-1].replace('rank=', ''))
         reconstruction_df['Parameter'] = reconstruction_df['Method'].apply(lambda x: x.split(" ")[3][:-1])
         reconstruction_df['Method'] = reconstruction_df['Method'].apply(lambda x: " ".join(x.split(' ')[1:3]))
 
+        # take care of numeric abnormalities
+        reconstruction_df.loc[reconstruction_df[r'Normalized Error'] <= np.finfo(np.float64).eps, r'Normalized Error'] = 1e-7
+
         # plot the reconstruction error
-        recon_plot = sns.lineplot(reconstruction_df, x='Reconstruction Rank', y=r'Normalized Frobenius Norm', hue='Parameter', errorbar=None, style='Method')
+        recon_plot = sns.lineplot(reconstruction_df, x='Reconstruction Rank', y=r'Normalized Error', hue='Parameter', errorbar=None, style='Method', markers=True, markersize=10, estimator=np.median)
+        # recon_plot_small = sns.lineplot(reconstruction_df[reconstruction_df["Parameter"] != "q=0"], x='Reconstruction Rank', y=r'Normalized Frobenius Norm', hue='Parameter', errorbar="sd", style='Method', ax=ax)
+        # recon_plot = sns.barplot(reconstruction_df, x='Reconstruction Rank', y=r'Normalized Frobenius Norm', hue='Parameter', errorbar="sd")
+
+        # make groups to draw some points
+        reconstruction_df_grouped = reconstruction_df[['Reconstruction Rank', 'Normalized Error', 'Parameter', 'Method']].groupby(['Reconstruction Rank', 'Parameter', 'Method'])
 
         # add some dummy plots so the legend cols are good
         recon_plot.plot([np.NaN, np.NaN], recon_plot.get_xlim(), color='w', alpha=0, label=' ')
         recon_plot.plot([np.NaN, np.NaN], recon_plot.get_xlim(), color='w', alpha=0, label=' ')
 
+        # go through the points to draw text
+        for (rank, parameter, method), val in reconstruction_df_grouped:
+            # ignore the fft methods
+            if 'fft' not in method or int(rank) & 1: continue
+
+            # compute an angle
+            angle = 0
+            if rank != "20":
+                # get value before and after
+                val_before = reconstruction_df_grouped.get_group((f"{int(rank) - 1}", parameter, method))[
+                    'Normalized Error'].median()
+                val_after = reconstruction_df_grouped.get_group((f"{int(rank) + 1}", parameter, method))[
+                    'Normalized Error'].median()
+
+                # the angle is the tan(alpha) = dy/dx
+                dy = abs(np.log(val_after) - np.log(val_before))
+                dx = 2
+
+                # get the angle
+                angle = np.rad2deg(np.arctan(dy / dx))
+
+            # get the actual value
+            val = val['Normalized Error'].median()
+            if val < 0.0001: continue
+
+            # get the value in percent with two digits
+            perc_val = f"{val * 100:.2f}%"
+
+            # add the text to the plot
+            plt.text(x=rank, y=val*1.4, s=perc_val, ha='center', va='center', fontsize=20, rotation=angle)
+
         # some formatting for the plot
-        recon_plot.set_yscale("log")
+        recon_plot.set_yscale('log')
         recon_plot.spines["top"].set_visible(False)
         recon_plot.spines["right"].set_visible(False)
-        recon_plot.set_ylim([10e-12, 4*10e-7])
-        recon_plot.legend(loc='lower right', ncols=2, title=f'Oversampling p={target_p}')
+        recon_plot.set_ylim([1e-5, 1.5])
+        recon_plot.legend(loc="lower right", ncols=2, title=f'Oversampling p={target_p}')
         plt.setp(recon_plot.get_legend().get_texts(), fontsize='22')
+        plt.setp(recon_plot.get_legend().get_title(), fontsize='24')
         plt.grid(axis='both', linestyle='-', alpha=0.8)
+        plt.xticks(fontsize=20)
+        plt.yticks(fontsize=20)
+        plt.gca().set_xlabel(plt.gca().get_xlabel(), fontsize=22)
+        plt.gca().set_ylabel(plt.gca().get_ylabel(), fontsize=22)
         plt.tight_layout()
         if SAVE_CONFIG:
             plt.savefig(f'Reconstruction{"_simulated" if simulated else ""}_p_{target_p}.pgf')
