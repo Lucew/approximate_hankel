@@ -28,7 +28,7 @@ def main(simulated=True):
 
     # compute the true score for all methods
     bin_number = 10
-    bins = np.linspace(0, 1, bin_number)
+    bins = np.linspace(0, 1, bin_number+1)
     bin_width = bins[1]-bins[0]
     data['True Score'] = pd.cut(data['true-score'] + data['score'], bins=bins)
     data['Approx. Score'] = data['score']
@@ -51,8 +51,8 @@ def main(simulated=True):
     # make the plots
     fig, ax = plt.subplots()
     sns.boxplot(data[data['norm. Method'] != 'svd'], x='True Score', y='Approx. Score', hue='Method', showfliers=False)
-    plt.plot([0, bin_number-(1+bin_width/2*bin_number)], [0, 1], linestyle='--', color='black', zorder=-1)
-    labels = [f"{float(item.get_text()[1:-1].split(', ')[1]):0.2f}" for item in ax.get_xticklabels()]
+    plt.plot([0, bin_number-1], [0, 1], linestyle='--', color='black', zorder=-1)
+    labels = [f"{float(item.get_text()[1:-1].split(', ')[1]):0.1f}" for item in ax.get_xticklabels()]
     ax.set_xticklabels(labels)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
