@@ -10,6 +10,18 @@ The code is mainly focused on the paper, for code with a better interface see be
 > If you only want to use the algorithms, check out package [changepoynt](https://github.com/Lucew/changepoynt)
 > where we will make the methods pip-installable and accessible.
 
+If you only want to use the fast Hankel matrix product, take a look at the functions `fast_numba_hankel_left_matmul`, 
+`fast_numba_hankel_matmul`, and `get_fast_hankel_representation` in [fastHankel.py](utils/fastHankel.py). For the
+decompositions using these functions look at `randomized_hankel_svd_fft` and `irlb_fft` in 
+[changepointComparison](changepointComparison.py).
+
+
+Our package [changepoynt](https://github.com/Lucew/changepoynt) includes matrix classes that are numpy compatible and
+implement all the necessary functions.
+
+> Consider using `scipy.sparse.linalg.LinearOperator` using our fast_numba_hankel_left_matmul` and 
+> `fast_numba_hankel_matmul` if you want to speed up your algorithms working on Hankel matrices
+
 ## Data Preparation
 We are very thankful to Eamonn Keogh and all the contributors to the 
 [UCR Time Series Archive](https://www.cs.ucr.edu/%7Eeamonn/time_series_data_2018/). In addition to the simulated data,
