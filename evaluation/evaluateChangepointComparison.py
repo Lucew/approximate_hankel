@@ -7,8 +7,8 @@ import seaborn as sns
 import matplotlib
 
 
-SAVE_CONFIG = True
-SIMULATION = False
+SAVE_CONFIG = False
+SIMULATION = True
 
 if SAVE_CONFIG:
     matplotlib.use("pgf")
@@ -96,10 +96,18 @@ def main(simulated=True):
     # group the methods after the window sizes
     grouped = computation_times.groupby("window size N")
     first_overtake = float('inf')
-    for window_size, group in grouped:
+    speed_factor_sst_ika = np.zeros((len(grouped), 1))
+    speed_factor_sst_irlb = np.zeros((len(grouped), 1))
+    for gdx, (window_size, group) in enumerate(grouped):
+        # print(window_size, group)
         resi = group.loc[group["computation time [ms]"].idxmin(), 'method']
-        if resi == "fft rsvd":
+        if resi == "fft ika":
             first_overtake = min(first_overtake, window_size)
+        speed_factor_sst_irlb = group.loc[group["method"] == 'fft irlb', "computation time [ms]"].to_numpy()/group.loc[group["method"] == 'fft rsvd', "computation time [ms]"].to_numpy()
+        speed_factor_sst_ika[gdx] = group.loc[group["method"] == 'fft rsvd', "computation time [ms]"].to_numpy()/group.loc[group["method"] == 'fft ika', "computation time [ms]"].to_numpy()
+    print('First Overtake', first_overtake)
+    print('Speed factor fft-ika-sst to fft-rsvd-sst', np.median(speed_factor_sst_ika), np.std(speed_factor_sst_ika))
+    print('Speed factor fft-rsvd-sst to fft-irlb-sst', np.median(speed_factor_sst_irlb), np.std(speed_factor_sst_irlb))
 
     # Plot vertical lines where one method becomes faster than the other
     plt.axvline(x=first_overtake, color='black', linestyle='--', linewidth=1)
@@ -134,7 +142,8 @@ def main(simulated=True):
     fig, ax = plt.subplots()
     ax.grid(axis='y', linestyle='-', alpha=0.8, zorder=0)
     ax.set_axisbelow(True)
-    plot = sns.histplot(data[data['method'] != "naive svd"], x='Error', hue="method", multiple="dodge", bins='sturges', log_scale=[False, True])
+    plot = sns.histplot(data[data['method'] != "naive svd"], x='Error', hue="method", multiple="dodge", bins='sturges')
+    plot.set_yscale("log")
     plot.spines["top"].set_visible(False)
     plot.spines["right"].set_visible(False)
     if SAVE_CONFIG:
@@ -147,7 +156,11 @@ def main(simulated=True):
     fig, ax = plt.subplots()
     ax.grid(axis='y', linestyle='-', alpha=0.8, zorder=0)
     ax.set_axisbelow(True)
-    plot = sns.histplot(data[data['method'] == "naive svd"], x="score", hue="method", multiple="dodge", bins='sturges', log_scale=[False, True])
+    plot = sns.histplot(data[data['method'] == "naive svd"], x="score", hue="method", multiple="dodge", bins='sturges')
+    plot.set_yscale("log")
+    plot.bar_label(plot.containers[0], rotation=90, padding=6, label_type='edge')
+    plot.spines["top"].set_visible(False)
+    plot.spines["right"].set_visible(False)
     if SAVE_CONFIG:
         plt.savefig(f'Changepoint_Score_Histogram{"_simulated" if simulated else ""}.pgf')
     else:

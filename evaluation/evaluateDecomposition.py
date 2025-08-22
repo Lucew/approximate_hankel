@@ -14,7 +14,7 @@ from scipy.ndimage import rotate
 # if this is True, the figure is saved as pgf
 # if this is False, the figure is plotted
 SAVE_CONFIG = False
-SIMULATION = False
+SIMULATION = True
 
 if SAVE_CONFIG:
     matplotlib.use("pgf")
@@ -22,11 +22,11 @@ if SAVE_CONFIG:
         "pgf.texsystem": "pdflatex",
         'font.family': 'serif',
         'font.serif': ['Times New Roman'],
-        'font.size': 30,
+        'font.size': 16,
         'text.usetex': True,
         'pgf.rcfonts': False,
     })
-rcParams['figure.figsize'] = 16, 9
+rcParams['figure.figsize'] = 12, 6.75
 
 
 def bic_criterion(input_array, method='BIC'):
@@ -115,10 +115,10 @@ def main(simulated=True):
             term = f'q={q}'
             tmp = [col for col in rsvd_recon_cols if term in col]
             # data[tmp] = (data[tmp].to_numpy()-data[svd_recon_cols].to_numpy())/((data[n_name].to_numpy()**2)[:, None]*summed.to_numpy()[:, None])
-            data[tmp] = data[tmp].to_numpy()/data[svd_recon_cols].to_numpy()-1
+            data[tmp] = np.abs(data[tmp].to_numpy()/data[svd_recon_cols].to_numpy()-1)
             tmp = [col for col in fft_rsvd_recon_cols if term in col]
             # data[tmp] = (data[tmp].to_numpy()-data[svd_recon_cols].to_numpy())/((data[n_name].to_numpy()**2)[:, None]*summed.to_numpy()[:, None])
-            data[tmp] = data[tmp].to_numpy()/data[svd_recon_cols].to_numpy()-1
+            data[tmp] = np.abs(data[tmp].to_numpy()/data[svd_recon_cols].to_numpy()-1)
 
         # melt the data into format to use with seaborn
         recon_cols = rsvd_recon_cols + fft_rsvd_recon_cols
@@ -155,8 +155,13 @@ def main(simulated=True):
                 # get value before and after
                 val_before = reconstruction_df_grouped.get_group((f"{int(rank) - 1}", parameter, method))[
                     'Normalized Error'].median()
+                val_before = max(val_before, reconstruction_df_grouped.get_group((f"{int(rank) - 1}", parameter, method.replace('naive', 'fft')))[
+                    'Normalized Error'].median())
                 val_after = reconstruction_df_grouped.get_group((f"{int(rank) + 1}", parameter, method))[
                     'Normalized Error'].median()
+                val_after = max(val_after, reconstruction_df_grouped.get_group(
+                    (f"{int(rank) + 1}", parameter, method.replace('naive', 'fft')))[
+                    'Normalized Error'].median())
 
                 # the angle is the tan(alpha) = dy/dx
                 dy = abs(np.log(val_after) - np.log(val_before))
@@ -166,20 +171,23 @@ def main(simulated=True):
                 angle = np.rad2deg(np.arctan(dy / dx))
 
             # get the actual value
-            val = val['Normalized Error'].median()
+            val = max(val['Normalized Error'].median(), reconstruction_df_grouped.get_group((rank, parameter, method.replace('naive', 'fft')))['Normalized Error'].median())
             if val < 0.0001: continue
 
             # get the value in percent with two digits
             perc_val = f"{val * 100:.2f}%"
 
             # add the text to the plot
-            plt.text(x=rank, y=val*1.4, s=perc_val, ha='center', va='center', fontsize=20, rotation=angle)
+            if parameter == 'q=3':
+                plt.text(x=rank, y=val/1.8, s=perc_val, ha='center', va='center', fontsize=20, rotation=angle)
+            else:
+                plt.text(x=rank, y=val*1.4, s=perc_val, ha='center', va='center', fontsize=20, rotation=angle)
 
         # some formatting for the plot
         recon_plot.set_yscale('log')
         recon_plot.spines["top"].set_visible(False)
         recon_plot.spines["right"].set_visible(False)
-        recon_plot.set_ylim([1e-5, 1.5])
+        recon_plot.set_ylim([1e-6, 1.5])
         recon_plot.legend(loc="lower right", ncols=2, title=f'Oversampling p={target_p}')
         plt.setp(recon_plot.get_legend().get_texts(), fontsize='22')
         plt.setp(recon_plot.get_legend().get_title(), fontsize='24')
@@ -265,6 +273,20 @@ def main(simulated=True):
         plt.savefig(f'EigenvalueSpectrum{"_simulated" if simulated else ""}.pgf')
     else:
         plt.show()
+
+    # make a new plot to check the reconstruction error overall
+    fig = plt.figure()
+
+    # get the reconstruction error for only the svd
+    print(data.columns)
+    groundtruth_df = data[[col for col in data.columns if not ('naive' in col or 'fft' in col)]]
+    reconcols = [col for col in groundtruth_df if col.startswith('reconstruction')]
+
+    eigenvalues = data.melt(id_vars=n_name, value_vars=reconcols, value_name='Reconstruction Error',
+                            var_name='Rank')
+    eigenvalues.loc[:, 'Rank'] = eigenvalues.loc[:, 'Rank'].apply(lambda x: x.split(' ')[-1])
+    plot = sns.boxplot(eigenvalues, x='Rank', y='Reconstruction Error', hue=n_name, orient='v',
+                       palette=palette, zorder=20, showfliers=False)
 
     # make violin plots from the thresholds
     fig, ax = plt.subplots()
