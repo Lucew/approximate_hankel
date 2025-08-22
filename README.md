@@ -13,7 +13,10 @@ The code is mainly focused on the paper, for code with a better interface see be
 If you only want to use the fast Hankel matrix product, take a look at the functions `fast_numba_hankel_left_matmul`, 
 `fast_numba_hankel_matmul`, and `get_fast_hankel_representation` in [fastHankel.py](utils/fastHankel.py). For the
 decompositions using these functions look at `randomized_hankel_svd_fft` and `irlb_fft` in 
-[changepointComparison](changepointComparison.py).
+[changepointComparison](changepointComparison.py). 
+
+⚠ Do not forget to set your thread limit for number or set
+`parallel=False` in the decorators if you encounter performance issues or very high CPU utilization!
 
 
 Our package [changepoynt](https://github.com/Lucew/changepoynt) includes matrix classes that are numpy compatible and
