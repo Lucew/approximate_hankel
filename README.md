@@ -19,7 +19,7 @@ decompositions using these functions look at `randomized_hankel_svd_fft` and `ir
 Our package [changepoynt](https://github.com/Lucew/changepoynt) includes matrix classes that are numpy compatible and
 implement all the necessary functions.
 
-> Consider using `scipy.sparse.linalg.LinearOperator` using our fast_numba_hankel_left_matmul` and 
+> Consider using `scipy.sparse.linalg.LinearOperator` using our `fast_numba_hankel_left_matmul` and 
 > `fast_numba_hankel_matmul` if you want to speed up your algorithms working on Hankel matrices
 
 ## Data Preparation
