@@ -15,8 +15,9 @@ If you only want to use the fast Hankel matrix product, take a look at the funct
 decompositions using these functions look at `randomized_hankel_svd_fft` and `irlb_fft` in 
 [changepointComparison](changepointComparison.py). 
 
-⚠ Do not forget to set your thread limit for number or set
-`parallel=False` in the decorators if you encounter performance issues or very high CPU utilization!
+⚠ Do not forget to set your thread limit for the Numba package with `numba.set_num_threads()` according to your setup
+or deactivate parallelization `parallel=False` in the decorators,  if you encounter performance issues or very high 
+CPU utilization! Numba will try to spawn as many threads as logical CPUs, which sometimes leads to lower performances.
 
 
 Our package [changepoynt](https://github.com/Lucew/changepoynt) includes matrix classes that are numpy compatible and
