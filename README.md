@@ -18,6 +18,8 @@ The code is mainly focused on the paper, for code with a better interface see th
 We provide a minimal example in the file [MinimalExample.py](MinimalExample.py) and a Jupyther Notebook [MinimalExample.ipynb](MinimalExample.ipynb).
 The code exemplary shows the speed-up and scoring error.
 
+> The Jupyther Notebook [MinimalExample.ipynb](MinimalExample.ipynb) also contains plots of the different scores
+
 To run it you only have to install `changepoynt` and `tqdm`_
 Normally, you can just use `pip install changepoynt` but for reproducibility, we install a certain
 commit from the package's [GitHub repository](https://github.com/Lucew/changepoynt).
@@ -33,8 +35,6 @@ python MinimalExample.py
 We also provide a Jupyther Notebook: [MinimalExample.ipynb](MinimalExample.ipynb).
 You can host this on any Notebook server (e.g., [Google Colab](https://colab.research.google.com/)) so you can run
 the minimal example without installing anything locally.
-
-> The Jupyther Notebook [MinimalExample.ipynb](MinimalExample.ipynb) also contains plots of the different scores
 
 ## Fast Hankel Matrix Product
 If you only want to use the fast Hankel matrix product, take a look at the functions `fast_numba_hankel_left_matmul`, 
