@@ -25,7 +25,7 @@ exp_signal = np.exp(-np.linspace(0, 5, 20*SIZE_FACTOR))
 steady_after = np.exp(-5)*np.ones(15)
 sine_after = 0.2*np.sin(np.linspace(0, 3*np.pi*10, 30*SIZE_FACTOR))
 signal = np.concatenate((steady_before, exp_signal, steady_after, sine_after))
-signal += 0.02*np.random.randn(signal.shape[0])  # add some minor noise
+signal += 0.03*np.random.randn(signal.shape[0])  # add some minor noise
 
 
 # create each of the detectors
