@@ -34,6 +34,8 @@ We also provide a Jupyther Notebook: [MinimalExample.ipynb](MinimalExample.ipynb
 You can host this on any Notebook server (e.g., [Google Colab](https://colab.research.google.com/)) so you can run
 the minimal example without installing anything locally.
 
+> The Jupyther Notebook [MinimalExample.ipynb](MinimalExample.ipynb) also contains plots of the different scores
+
 ## Fast Hankel Matrix Product
 If you only want to use the fast Hankel matrix product, take a look at the functions `fast_numba_hankel_left_matmul`, 
 `fast_numba_hankel_matmul`, and `get_fast_hankel_representation` in [fastHankel.py](utils/fastHankel.py). For the
