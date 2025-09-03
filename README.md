@@ -1,4 +1,4 @@
-# Efficient Hankel Decomposition for Change Point Detection
+# Accelerating Singular Spectrum Transformation for Scalable Change Point Detection.
 ![Computation](images/Changepoint_Computation_Time_simulated.png)
 This repository contains the code for the paper 
 
