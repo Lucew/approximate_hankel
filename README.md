@@ -15,7 +15,7 @@ The code is mainly focused on the paper, for code with a better interface see th
 > where we will make the methods pip-installable and accessible.
 
 ## Minimal Example
-We provide a minimal example in the file [MinimalExample.py](MinimalExample.py).
+We provide a minimal example in the file [MinimalExample.py](MinimalExample.py) and a Jupyther Notebook [MinimalExample.ipynb](MinimalExample.ipynb).
 The code exemplary shows the speed-up and scoring error.
 
 To run it you only have to install `changepoynt` and `tqdm`_
