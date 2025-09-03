@@ -1,0 +1,4 @@
+evaluation/Changepoint_simulated_WindowSizes.parquet filter=lfs diff=lfs merge=lfs -text
+evaluation/Changepoint_WindowSizes.parquet filter=lfs diff=lfs merge=lfs -text
+evaluation/Decomposition.parquet filter=lfs diff=lfs merge=lfs -text
+evaluation/Decomposition_simulated.parquet filter=lfs diff=lfs merge=lfs -text
