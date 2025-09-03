@@ -1,8 +1,11 @@
 """
 This is a minimal example comparing the different approaches mentioned in the paper.
 please run:
-`pip install changepoynt tqdm`
+`pip install git+https://github.com/Lucew/changepoynt.git@8c70dda856d758bcb6da1d2a313aa8cf81d5529b tqdm`
 before running the example
+
+Normally, you can just use `pip install changepoynt` but for reproducibility, we install a certain
+commit from the package's GitHub repository.
 
 In with the parameters in our version, this example took around 2 minutes on a modern but standard laptop.
 """
