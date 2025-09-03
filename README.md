@@ -46,9 +46,29 @@ implement all the necessary functions.
 > Consider using `scipy.sparse.linalg.LinearOperator` using our `fast_numba_hankel_left_matmul` and 
 > `fast_numba_hankel_matmul` if you want to speed up your algorithms working on Hankel matrices
 
-## Intermediate Results
+## Intermediate Results (Recreating Plots)
 Rerunning all experiments took us around ten days on a capable 64 physical core compute server. See the sections
 below for information how to rerun all our experiments.
+
+To enable recreating the plots, we use [git lfs](https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage)
+to host intermediate results in the repository.
+
+The files are:
+- Decompositions error and  Singular Value Spectrum: [Decomposition.parquet](evaluation/Decomposition.parquet) and [Decomposition_simulated.parquet](evaluation/Decomposition_simulated.parquet)
+- Scoring error and Timing Measurements: [Changepoint_WindowSizes.parquet](evaluation/Changepoint_WindowSizes.parquet) and [Changepoint_simulated_WindowSizes.parquet](evaluation/Changepoint_simulated_WindowSizes.parquet)
+
+To recreate the plots from these intermediate results, download and place all files in the [evaluation folder](/evaluation).
+You have to either install [git lfs](https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage)
+before cloning or download and place the files manually using the web interface.
+
+For Figs. 3a, 4a, 4b run:
+`python ./evaluation/evaluateDecomposition.py`
+
+For Figs. 5a and 7 run:
+`python ./evaluation/evaluateChangepointComparison.py`
+
+For Fig. 6 run (can take around 30s):
+`python ./evaluation/evaluateScoreScatter.py`
 
 ## Data Preparation
 We are very thankful to Eamonn Keogh and all the contributors to the 

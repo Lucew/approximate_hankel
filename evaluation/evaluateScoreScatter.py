@@ -7,7 +7,7 @@ import numpy as np
 from evaluation.evaluateChangepointComparison import load_files
 
 SAVE_CONFIG = False
-SIMULATION = True
+SIMULATION = False
 
 if SAVE_CONFIG:
     matplotlib.use("pgf")
