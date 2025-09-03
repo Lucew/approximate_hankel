@@ -22,7 +22,7 @@ To run it you only have to install `changepoynt` and `tqdm`_
 Normally, you can just use `pip install changepoynt` but for reproducibility, we install a certain
 commit from the package's [GitHub repository](https://github.com/Lucew/changepoynt).
 ```bash
-pip install git+https://github.com/Lucew/changepoynt.git@8c70dda856d758bcb6da1d2a313aa8cf81d5529b tqdm
+pip install git+https://github.com/Lucew/changepoynt.git@b4ea5ca606138578e2aa785dc921a5fe7af8c07d tqdm
 ```
 
 and then run the file with

@@ -1,7 +1,7 @@
 """
 This is a minimal example comparing the different approaches mentioned in the paper.
 please run:
-`pip install git+https://github.com/Lucew/changepoynt.git@8c70dda856d758bcb6da1d2a313aa8cf81d5529b tqdm`
+`pip install git+https://github.com/Lucew/changepoynt.git@b4ea5ca606138578e2aa785dc921a5fe7af8c07d tqdm`
 before running the example
 
 Normally, you can just use `pip install changepoynt` but for reproducibility, we install a certain
@@ -37,7 +37,7 @@ FFT_RSVD_SST = SST(window_size, method='rsvd', use_fast_hankel=True, scoring_ste
 RSVD_SST = SST(window_size, method='rsvd', scoring_step=scoring_step)
 FFT_IKA_SST = SST(window_size, method='ika', use_fast_hankel=True, scoring_step=scoring_step)
 IKA_SST = SST(window_size, method='ika', scoring_step=scoring_step)
-NAIVE_SVD = SST(window_size, method='naive', scoring_step=scoring_step)
+NAIVE_SVD = SST(window_size, method='naive updated', scoring_step=scoring_step)
 
 # create an iterable with the detectors
 detectors = {f'{NAIVE_SVD=}'.split('=')[0]: NAIVE_SVD, f'{RSVD_SST=}'.split('=')[0]: RSVD_SST, f'{FFT_RSVD_SST=}'.split('=')[0]: FFT_RSVD_SST, f'{IKA_SST=}'.split('=')[0]:IKA_SST, f'{FFT_IKA_SST=}'.split('=')[0]: FFT_IKA_SST}
