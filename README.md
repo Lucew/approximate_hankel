@@ -61,14 +61,19 @@ To recreate the plots from these intermediate results, download and place all fi
 You have to either install [git lfs](https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage)
 before cloning or download and place the files manually using the web interface.
 
+Navigate into the evaluation folder:
+```bash
+cd ./evaluations
+```
+
 For Figs. 3a, 4a, 4b run:
-`python ./evaluation/evaluateDecomposition.py`
+`python evaluateDecomposition.py`
 
 For Figs. 5a and 7 run:
-`python ./evaluation/evaluateChangepointComparison.py`
+`python evaluateChangepointComparison.py`
 
 For Fig. 6 run (can take around 30s):
-`python ./evaluation/evaluateScoreScatter.py`
+`python evaluateScoreScatter.py`
 
 ## Data Preparation
 We are very thankful to Eamonn Keogh and all the contributors to the 
