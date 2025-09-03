@@ -48,7 +48,7 @@ implement all the necessary functions.
 
 ## Intermediate Results (Recreating Plots)
 Rerunning all experiments took us around ten days on a capable 64 physical core compute server. See the sections
-below for information how to rerun all our experiments.
+below for information how to rerun all our experiments. We saved intermediate results to reduce the reproducibility effort.
 
 To enable recreating the plots, we use [git lfs](https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage)
 to host intermediate results in the repository.
