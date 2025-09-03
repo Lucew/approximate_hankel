@@ -1,6 +1,6 @@
 fbpca
 h5py
-numpy
+numpy<2.0.0
 scipy
 tqdm
 matplotlib
