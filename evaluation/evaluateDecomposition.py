@@ -189,11 +189,14 @@ def main(simulated=True):
         recon_plot.spines["right"].set_visible(False)
         recon_plot.set_ylim([1e-6, 1.5])
         recon_plot.legend(loc="lower right", ncols=2, title=f'Oversampling p={target_p}')
+        recon_plot.set_xlabel('Target Rank $k$')
         plt.setp(recon_plot.get_legend().get_texts(), fontsize='22')
         plt.setp(recon_plot.get_legend().get_title(), fontsize='24')
         plt.grid(axis='both', linestyle='-', alpha=0.8)
-        plt.xticks(fontsize=20)
-        plt.yticks(fontsize=20)
+        recon_plot.xaxis.set_tick_params(labelsize=20)
+        recon_plot.yaxis.set_tick_params(labelsize=20)
+        # plt.xticks(fontsize=20)
+        # plt.yticks(fontsize=20)
         plt.gca().set_xlabel(plt.gca().get_xlabel(), fontsize=22)
         plt.gca().set_ylabel(plt.gca().get_ylabel(), fontsize=22)
         plt.tight_layout()
@@ -242,6 +245,10 @@ def main(simulated=True):
     # plot the distribution of eigenvalues for every matrix size
     plot = sns.boxplot(eigenvalues, x='Eigenvalues', y='Participation [%]', ax=ax, hue=n_name, orient='v',
                        palette=palette, zorder=20, showfliers=False)
+    ax.set_xlabel('Singular values')
+
+    # check the singular values and their respective singular value gap
+    check_participation_threshold(eigenvalues)
 
     # plot the magical noise threshold
     plt.axhspan(plot.get_ylim()[0], threshold, facecolor='0.4', alpha=0.35, zorder=0)
@@ -268,6 +275,16 @@ def main(simulated=True):
     plot.legend(loc='upper right', ncol=2, title=n_name)
     plot.set_xticklabels([f"{idx}" for idx in range(len(eigcols))])
     plot.set_yscale("log")
+    ax2.xaxis.set_tick_params(labelsize=20)
+    ax2.yaxis.set_tick_params(labelsize=20)
+    ax.xaxis.set_tick_params(labelsize=20)
+    ax.yaxis.set_tick_params(labelsize=20)
+    ax.set_xlabel(ax.get_xlabel(), fontsize=22)
+    ax.set_ylabel(ax.get_ylabel(), fontsize=22)
+    ax2.set_xlabel(ax2.get_xlabel(), fontsize=22)
+    ax2.set_ylabel(ax2.get_ylabel(), fontsize=22)
+    plt.setp(plot.get_legend().get_texts(), fontsize='18')
+    plt.setp(plot.get_legend().get_title(), fontsize='20')
     plt.tight_layout()
     if SAVE_CONFIG:
         plt.savefig(f'EigenvalueSpectrum{"_simulated" if simulated else ""}.pgf')
@@ -301,6 +318,29 @@ def main(simulated=True):
     else:
         plt.show()
 
+
+def check_participation_threshold(eigenvalues: pd.DataFrame):
+
+    # create a new figure
+    # fig, ax = plt.subplots()
+
+    # get the median value per group
+    eigenvalues_grouped_std = eigenvalues.groupby(['Matrix Dim. NxN', 'Eigenvalues']).std()
+    # eigenvalues_grouped_std.reset_index(inplace=True)
+    eigenvalues_grouped_mean = eigenvalues.groupby(['Matrix Dim. NxN', 'Eigenvalues']).mean()
+    # eigenvalues_grouped.reset_index(inplace=True)
+    # eigenvalues_grouped = eigenvalues_grouped.sort_values(by='Eigenvalues', key=lambda x: x.str.replace('eigenvalue ', '').astype(int))
+
+    # merge the dataframes
+    eigenvalue_participation_info = eigenvalues_grouped_mean.join(eigenvalues_grouped_std, lsuffix='_mean', rsuffix='_std')
+    eigenvalue_participation_info.reset_index(inplace=True)
+    eigenvalue_participation_info['Eigenvalue number'] = eigenvalue_participation_info['Eigenvalues'].str.replace('eigenvalue ', '').astype(int)
+
+    # get the minimal number where the mean plus std is below 5% (zero indexed singular values, so add one to the result)
+    minimal_singular_value_index = eigenvalue_participation_info[eigenvalue_participation_info['Participation [%]_mean'] + eigenvalue_participation_info['Participation [%]_std'] <= 5.0]['Eigenvalue number'].min()
+    minimal_singular_value_index_mean = eigenvalue_participation_info[eigenvalue_participation_info['Participation [%]_mean']  <= 5.0]['Eigenvalue number'].min()
+    print('The first singular value, where the mean participation + 1 standard deviation is below 5%:', minimal_singular_value_index+1)
+    print('The first singular value, where the mean participation is below 5%:', minimal_singular_value_index_mean+1)
 
 if __name__ == "__main__":
     main(simulated=SIMULATION)
