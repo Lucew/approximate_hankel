@@ -6,8 +6,9 @@ This repository contains the code for the paper
 
 
 The repository aims to make the research and results from the paper reproducible. While we are not aware of any 
-imminent restrictions, we recommend setting up Pythen 3.9 or newer (the newest available interpreter is 3.11 
-at the time of this publication).
+imminent restrictions, we recommend setting up Pythen 3.9 or newer (we used Python 3.11). While the paper uses square
+Hankel matrices for clarity, the algorithms work for rectangular matrices as well, and the code in this repository
+supports them as well. Additionally, we support  lagged columns (where the sliding window for the Hankel matrix makes steps larger than one).
 
 The code is mainly focused on the paper, for code with a better interface see the following:
 
