@@ -6,14 +6,16 @@ This repository contains the code for the paper
 
 
 The repository aims to make the research and results from the paper reproducible. While we are not aware of any 
-imminent restrictions, we recommend setting up Pythen 3.9 or newer (we used Python 3.11). While the paper uses square
-Hankel matrices for clarity, the algorithms work for rectangular matrices as well, and the code in this repository
-supports them as well. Additionally, we support  lagged columns (where the sliding window for the Hankel matrix makes steps larger than one).
+imminent restrictions, we recommend setting up Pythen 3.9 or newer (we used Python 3.11).
 
 The code is mainly focused on the paper, for code with a better interface see the following:
 
 > If you only want to use the algorithms, check out package [changepoynt](https://github.com/Lucew/changepoynt)
 > where we will make the methods pip-installable and accessible.
+
+While the paper uses square Hankel matrices for clarity, the algorithms work for rectangular matrices as well, and the 
+code in this repository supports them. Additionally, we support  lagged columns (where the steps between sliding window
+in the rows/columns of the Hankel matrix are larger than one).
 
 ## Minimal Example
 We provide a minimal example in the file [MinimalExample.py](MinimalExample.py) and a Jupyther Notebook [MinimalExample.ipynb](MinimalExample.ipynb).
