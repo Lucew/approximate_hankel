@@ -110,8 +110,8 @@ def main(simulated=True):
     print('Speed factor fft-rsvd-sst to fft-irlb-sst', np.median(speed_factor_sst_irlb), np.std(speed_factor_sst_irlb))
 
     # Plot vertical lines where one method becomes faster than the other
-    plt.axvline(x=first_overtake, color='black', linestyle='--', linewidth=1)
-    plt.text(first_overtake+30, plt.gca().get_ylim()[1], f'{first_overtake}', rotation=0, verticalalignment='bottom')
+    # plt.axvline(x=first_overtake, color='black', linestyle='--', linewidth=1)
+    # plt.text(first_overtake+30, plt.gca().get_ylim()[1], f'{first_overtake}', rotation=0, verticalalignment='bottom')
 
     # add some dummy plots so the legend cols are good
     plot.set_xlim([-100, 5000])
@@ -121,7 +121,6 @@ def main(simulated=True):
     # Set labels and title
     plt.xlabel("Window size N")
     plt.ylabel("Computation time [ms]")
-    plt.title("Computation Time Comparison")
     plot.set(yscale="log")
 
     complexity = {"naive svd": r"$\mathcal{O}(N^{3})$", "naive rsvd": r"$\mathcal{O}(N^{2})$", "fft rsvd": r"$\mathcal{O}(N*logN)$", "naive ika": r"$\mathcal{O}(N^{3})$", "fft ika": r"$\mathcal{O}(N*logN)$", "naive irlb": r"$\mathcal{O}(N^{2})$", "fft irlb": r"$\mathcal{O}(N*logN)$"}
