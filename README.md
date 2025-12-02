@@ -1,5 +1,6 @@
 # Accelerating Singular Spectrum Transformation for Scalable Change Point Detection.
 ![Computation](images/graphical_abstract.svg)
+
 This repository contains the code for the paper 
 
 **Accelerating Singular Spectrum Transformation for Scalable Change Point Detection**.
