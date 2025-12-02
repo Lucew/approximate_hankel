@@ -1,5 +1,5 @@
 # Accelerating Singular Spectrum Transformation for Scalable Change Point Detection.
-![Computation](images/Changepoint_Computation_Time_simulated.png)
+![Computation](images/graphical_abstract.svg)
 This repository contains the code for the paper 
 
 **Accelerating Singular Spectrum Transformation for Scalable Change Point Detection**.
@@ -73,17 +73,23 @@ before cloning or download and place the files manually using the web interface.
 
 Navigate into the evaluation folder:
 ```bash
-cd ./evaluations
+cd ./evaluation
 ```
 
-For Figs. 3a, 4a, 4b run:
-`python evaluateDecomposition.py`
+For Figs. 4a-b, 5a-c run:
+`python valuateDecomposition.py`
 
-For Figs. 5a and 7 run:
+For Figs. 6a-b and 8a run:
 `python evaluateChangepointComparison.py`
 
-For Fig. 6 run (can take around 30s):
+For Fig. 8b run:
+`python evaluateSpeedFactors.py`
+
+For Fig. 7 run (can take around 30s):
 `python evaluateScoreScatter.py`
+
+Alternate between synthetic and real signals by alternating
+the global boolean `SIMULATION` at the beginning of each script.
 
 ## Data Preparation
 We are very thankful to Eamonn Keogh and all the contributors to the 
