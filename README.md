@@ -132,8 +132,8 @@ Change the global variables at the beginning of the plot scripts
 and `SIMULATION = True` toggles between signals from the UCR archive and simulated signals.
 
 ## Speed factors
-Implementation details (package versions, language, CPU) and available array/FFT libraries have secondary effects on how
-the asymptotic complexities transfer to runtime improvements varies.
+Implementation details (package versions, language, CPU) and available array/FFT libraries have secondary effects
+(few ms) on how the asymptotic complexities transfer to runtime improvements varies.
 Using the code provided in this package we achieved the following speedups:
 
 ![Speed Factors](images/speed_factors.png)
