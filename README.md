@@ -1,6 +1,9 @@
 # Accelerating Singular Spectrum Transformation for Scalable Change Point Detection ([🔗](https://doi.org/10.1109/ACCESS.2025.3640386))
 ## Fast (IKA-)SST based Change Point Detection with low approximation error
+
 ![Computation](images/graphical_abstract.png)
+**Figure 1**: Computation times and contributions.
+
 
 This repository contains the code for the paper
 
@@ -20,6 +23,10 @@ While the paper mainly covers square Hankel matrices for clarity, the algorithms
 code in this repository supports arbitrary matrix sizes. Additionally, we support lagged columns (where the steps between sliding windows
 in the rows/columns of the Hankel matrix are larger than one).
 
+![Speed Factors](images/speed_factors.png)
+**Figure 2**: Speed factors comparing the improved versions with different baselines.
+
+
 ## Minimal Example
 We provide a minimal example in the file [MinimalExample.py](MinimalExample.py) and a Jupyter Notebook [MinimalExample.ipynb](MinimalExample.ipynb).
 The code exemplifies the speed-up and scoring error.
@@ -29,6 +36,7 @@ The code exemplifies the speed-up and scoring error.
 To run it you only have to install `changepoynt` and `tqdm`_
 Usually, you can use `pip install changepoynt` but for reproducibility, we install a certain
 commit from the package's [GitHub repository](https://github.com/Lucew/changepoynt).
+
 ```bash
 pip install git+https://github.com/Lucew/changepoynt.git@b4ea5ca606138578e2aa785dc921a5fe7af8c07d tqdm
 ```
