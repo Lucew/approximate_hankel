@@ -23,10 +23,6 @@ While the paper mainly covers square Hankel matrices for clarity, the algorithms
 code in this repository supports arbitrary matrix sizes. Additionally, we support lagged columns (where the steps between sliding windows
 in the rows/columns of the Hankel matrix are larger than one).
 
-![Speed Factors](images/speed_factors.png)
-**Figure 2**: Speed factors comparing the improved versions with different baselines.
-
-
 ## Minimal Example
 We provide a minimal example in the file [MinimalExample.py](MinimalExample.py) and a Jupyter Notebook [MinimalExample.ipynb](MinimalExample.ipynb).
 The code exemplifies the speed-up and scoring error.
@@ -135,6 +131,13 @@ scatter plot comparing the ground truth scores with the approximated scores.
 Change the global variables at the beginning of the plot scripts 
 `SAVE_CONFIG = False` to see the plots immediately; otherwise, they will be saved as .pgf files. `SIMULATION = False` 
 and `SIMULATION = True` toggles between signals from the UCR archive and simulated signals.
+
+## Speed factors
+The speedup heavily depends on the implementation details and available array/FFT libraries.
+Using the code provided in this package we achieved the following speedups:
+
+![Speed Factors](images/speed_factors.png)
+**Figure 2**: Speed factors comparing the improved versions with different baselines.
 
 ## Acknowledgement
 Projects like this are never the sole outcome of a single research paper.
