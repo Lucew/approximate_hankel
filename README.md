@@ -1,4 +1,5 @@
-# Accelerating Singular Spectrum Transformation for Scalable Change Point Detection ([link](https://doi.org/10.1109/ACCESS.2025.3640386)).
+# Accelerating Singular Spectrum Transformation for Scalable Change Point Detection ([🔗](https://doi.org/10.1109/ACCESS.2025.3640386))
+## Fast (IKA-)SST based Change Point Detection with low approximation error
 ![Computation](images/graphical_abstract.png)
 
 This repository contains the code for the paper
