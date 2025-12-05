@@ -2,7 +2,6 @@
 ## Fast (IKA-)SST based Change Point Detection with low approximation error
 
 ![Computation](images/graphical_abstract.png)
-**Figure 1**: Computation times and contributions.
 
 
 This repository contains the code for the paper
@@ -137,7 +136,6 @@ The speedup heavily depends on the implementation details and available array/FF
 Using the code provided in this package we achieved the following speedups:
 
 ![Speed Factors](images/speed_factors.png)
-**Figure 2**: Speed factors comparing the improved versions with different baselines.
 
 ## Acknowledgement
 Projects like this are never the sole outcome of a single research paper.
