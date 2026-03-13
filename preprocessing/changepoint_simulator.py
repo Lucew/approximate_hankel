@@ -1,5 +1,5 @@
 import numpy as np
-
+import seaborn as sns
 
 class ChangeSimulator:
 
@@ -151,12 +151,12 @@ def main():
     for _ in range(1):
         for idx, (name, signal) in enumerate(gn.yield_signals()):
             signal = (signal-np.min(signal))/(np.max(signal)-np.min(signal))-idx*1.2
-            ax.plot(signal, label=name.split('_')[0])
+            ax.plot(signal, label=name.split('_')[0], color=sns.color_palette("deep", 4)[idx])
             ax.text(x=-40, y=signal[0],s=idx+1, va="center", fontsize='x-large')
     plt.legend(loc='upper right')
     ax.set_ylim([-4, 1.5])
     plt.axis('off')
-    plt.savefig(f'Simulated_Signals.pgf')
+    plt.savefig(f'Simulated_Signals.pgf', bbox_inches='tight')
     plt.show()
 
 
