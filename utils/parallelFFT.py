@@ -14,6 +14,7 @@ import numpy as np
 import concurrent.futures
 import timeit
 from utils.fastHankel import fast_hankel_matmul as fast_hankel_matmul2
+from utils.fastHankel import compile_hankel_naive
 from threadpoolctl import threadpool_limits
 import numba
 
@@ -161,6 +162,29 @@ def fast_hankel_numba3(hankel_fft: np.ndarray, l_windows: int, fft_shape: int, o
     return result_buffer
 
 
+def fast_cast_hankel_matmul(hankel_fft: np.ndarray, l_windows: int, fft_shape: int, other_matrix: np.ndarray,
+                            lag: int = 1, workers=-1):
+    # get the shape of the other matrix
+    m, n = other_matrix.shape
+
+    # make fft of x (while padding x with zeros) to make up for the lag
+    if lag > 1:
+        out = np.zeros((lag * m - lag + 1, n), dtype=other_matrix.dtype)
+        out[::lag, :] = other_matrix
+    else:
+        out = other_matrix
+
+    # flip the other matrix
+    out = np.flipud(out)
+
+    # compute the fft of the vector
+    fft_x = spfft.rfft(out, n=fft_shape, axis=0, workers=workers)
+
+    # multiply the matrices
+    result_buffer = spfft.irfft(fft_x*np.broadcast_to(hankel_fft[..., None], fft_x.shape), n=fft_shape, axis=0, workers=workers)[(m - 1) * lag:(m - 1) * lag + l_windows]
+    return result_buffer
+
+
 def main():
     # define some window length
     limit_threads = 4
@@ -183,6 +207,7 @@ def main():
 
     # get both hankel representations
     hankel_rfft, fft_len, signal = get_fast_hankel_representation(ts, end_idx, l_windows, n_windows, lag)
+    hankel = compile_hankel_naive(ts, end_idx, l_windows, n_windows, lag)
 
     # run the jit compilation once
     numba.set_num_threads(limit_threads)
@@ -190,6 +215,7 @@ def main():
     fast_hankel_numba(hankel_rfft, l_windows, fft_len, multi)
     fast_hankel_numba2(hankel_rfft, l_windows, fft_len, multi)
     fast_hankel_numba3(hankel_rfft, l_windows, fft_len, multi)
+    fast_cast_hankel_matmul(hankel_rfft, l_windows, fft_len, multi)
 
     # execute the function and measure the time
     with threadpool_limits(limits=limit_threads):
@@ -202,16 +228,31 @@ def main():
             print(timeit.timeit(lambda: fast_hankel_numba2(hankel_rfft, l_windows, fft_len, multi), number=run_num) / run_num * 1000)
             print(timeit.timeit(lambda: fast_hankel_numba3(hankel_rfft, l_windows, fft_len, multi), number=run_num) / run_num * 1000)
 
+            print("Other casting implementations")
+            print(timeit.timeit(lambda: fast_cast_hankel_matmul(hankel_rfft, l_windows, fft_len, multi, workers=limit_threads),
+                                number=run_num) / run_num * 1000)
+
             print("Own Multithreading")
             print(timeit.timeit(lambda: fast_hankel_matmul_parallel(hankel_rfft, l_windows, fft_len, multi, threadpool=pool), number=run_num) / run_num * 1000)
             hankel_rfft2 = hankel_rfft[:, None]
             print(timeit.timeit(lambda: fast_hankel_matmul2(hankel_rfft2, l_windows, fft_len, multi, lag, workers=limit_threads), number=run_num)/run_num*1000)
+
+            print("Naive Multiplication")
+            print(timeit.timeit(lambda: hankel@multi, number=run_num) / run_num * 1000)
+
             # print(fast_hankel_numba.parallel_diagnostics(level=4))
             # check whether the results are the same
             # a = fast_hankel_matmul_parallel(hankel_rfft, l_windows, fft_len, multi, threadpool=pool)
-            a = fast_hankel_numba3(hankel_rfft, l_windows, fft_len, multi)
+            a = fast_hankel_numba3(hankel_rfft, l_windows, fft_len, multi, lag=1)
             b = fast_hankel_matmul2(hankel_rfft2, l_windows, fft_len, multi, lag, workers=limit_threads)
+            c = fast_cast_hankel_matmul(hankel_rfft, l_windows, fft_len, multi, lag=lag)
+            d = hankel @ multi
             print(np.allclose(a, b))
+            print(np.allclose(c, a))
+            print(np.allclose(b, c))
+            print(np.allclose(d, c))
+            print(np.allclose(d, a))
+            print(np.allclose(d, b))
 
 
 if __name__ == "__main__":
